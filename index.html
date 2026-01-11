@@ -41,7 +41,9 @@
             padding: 6px;
             border: 3px solid;
             border-color: var(--xp-white) var(--xp-shadow) var(--xp-shadow) var(--xp-white);
-            display: inline-block;
+            display: inline-flex;
+            flex-direction: column;
+            box-sizing: border-box;
         }
 
         .controls {
@@ -60,6 +62,7 @@
             margin-bottom: 6px;
             border: 3px solid;
             border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
+            box-sizing: border-box;
         }
 
         .lcd-display {
@@ -111,6 +114,7 @@
             border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
             background-color: var(--xp-shadow);
             margin: 0 auto;
+            box-sizing: content-box;
         }
 
         .cell {
@@ -212,6 +216,8 @@
         const win = document.getElementById('main-window');
         const padding = 20; 
         
+        scaler.style.transform = 'scale(1)';
+        
         const availableWidth = window.innerWidth - padding;
         const availableHeight = window.innerHeight - padding;
         const currentWidth = win.offsetWidth;
@@ -268,6 +274,7 @@
         drawLCD('mine-count-display', mines);
 
         gridUI.style.gridTemplateColumns = `repeat(${cols}, 16px)`;
+        gridUI.style.width = `${cols * 16}px`;
         gridUI.innerHTML = '';
         gridArr = [];
 
@@ -320,8 +327,7 @@
         }
         gridUI.appendChild(frag);
         
-        // Wait for layout to settle before scaling
-        setTimeout(handleResize, 10);
+        setTimeout(handleResize, 0);
     }
 
     function onDown(e, y, x) {
@@ -436,6 +442,99 @@
                     gridArr[y][x].count = findNeighbors(y, x).filter(n => gridArr[n.y][n.x].isMine).length;
                 }
             }
+        }
+    }
+
+    function findNeighbors(y, x) {
+        const rows = gridArr.length, cols = gridArr[0].length;
+        const list = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dy === 0 && dx === 0) continue;
+                let ny = y + dy, nx = x + dx;
+                if (ny >= 0 && ny < rows && nx >= 0 && nx < cols) list.push({ y: ny, x: nx });
+            }
+        }
+        return list;
+    }
+
+    function floodFill(y, x) {
+        const cell = gridArr[y][x];
+        if (cell.isRevealed || cell.isFlagged) return;
+        cell.isRevealed = true;
+        squaresOpened++;
+        cell.el.className = `cell num-${cell.count}`;
+        if (cell.count === 0) {
+            findNeighbors(y, x).forEach(n => floodFill(n.y, n.x));
+        }
+    }
+
+    function rightClick(y, x) {
+        if (isGameOver || gridArr[y][x].isRevealed) return;
+        const cell = gridArr[y][x];
+        cell.isFlagged = !cell.isFlagged;
+        cell.el.className = cell.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
+        if (cell.isFlagged) flaggedKeys.add(`${y},${x}`); else flaggedKeys.delete(`${y},${x}`);
+        
+        const diff = document.getElementById('difficulty').value;
+        drawLCD('mine-count-display', levels[diff].m - flaggedKeys.size);
+    }
+
+    function tick() {
+        if (clock) clearInterval(clock);
+        clock = setInterval(() => {
+            timeElapsed = Math.min(timeElapsed + 1, 999);
+            drawLCD('timer-display', timeElapsed);
+        }, 1000);
+    }
+
+    function checkWin() {
+        const r = gridArr.length, c = gridArr[0].length;
+        const diff = document.getElementById('difficulty').value;
+        const mines = levels[diff].m;
+        
+        if (squaresOpened === (r * c) - mines) {
+            isGameOver = true;
+            clearInterval(clock);
+            mood = 'win';
+            updateFace('win');
+            playSound('win');
+            drawLCD('mine-count-display', 0);
+            mineKeys.forEach(key => {
+                const [my, mx] = key.split(',').map(Number);
+                if (!gridArr[my][mx].isFlagged) {
+                    gridArr[my][mx].isFlagged = true;
+                    gridArr[my][mx].el.className = 'cell cell-flag';
+                }
+            });
+        }
+    }
+
+    function boom(hitY, hitX) {
+        isGameOver = true;
+        clearInterval(clock);
+        mood = 'dead';
+        updateFace('dead');
+        playSound('bomb');
+        mineKeys.forEach(key => {
+            const [my, mx] = key.split(',').map(Number);
+            if (!gridArr[my][mx].isFlagged) {
+                gridArr[my][mx].el.className = (my === hitY && mx === hitX) ? 'cell cell-mine-hit' : 'cell cell-mine-revealed';
+            }
+        });
+        flaggedKeys.forEach(key => {
+            const [fy, fx] = key.split(',').map(Number);
+            if (!gridArr[fy][fx].isMine) gridArr[fy][fx].el.className = 'cell cell-mine-wrong';
+        });
+    }
+
+    window.addEventListener('resize', handleResize);
+    window.onload = setupBoard;
+</script>
+
+</body>
+</html>
+
         }
     }
 
