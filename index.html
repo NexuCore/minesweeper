@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="https://nexucore.github.io/minesweeper/assets/minesweeperLogo.png">
     <title>Minesweeper</title>
     <style>
         :root {
@@ -19,10 +20,20 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            width: 100vw;
             font-family: 'Tahoma', sans-serif;
             user-select: none;
             -webkit-user-select: none;
             touch-action: manipulation;
+            overflow: hidden;
+        }
+
+        #game-scaler {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.1s ease-out;
+            transform-origin: center center;
         }
 
         .game-window {
@@ -30,8 +41,7 @@
             padding: 6px;
             border: 3px solid;
             border-color: var(--xp-white) var(--xp-shadow) var(--xp-shadow) var(--xp-white);
-            max-width: 95vw;
-            overflow-x: auto;
+            display: inline-block;
         }
 
         .controls {
@@ -68,7 +78,6 @@
 
         .digit-0 { background-position: 0px 0px; }
         .digit-1 { background-position: -13px 0px; }
-        .digit-2 { background-position: -266px 0px; } /* Error in original sprite positions? Fixed logic below */
         .digit-2 { background-position: -26px 0px; }
         .digit-3 { background-position: -39px 0px; }
         .digit-4 { background-position: -52px 0px; }
@@ -132,33 +141,35 @@
 </head>
 <body>
 
-<div class="game-window">
-    <div class="controls">
-        <div>
-            Difficulty: 
-            <select id="difficulty" onchange="setupBoard()">
-                <option value="easy">Beginner</option>
-                <option value="medium">Intermediate</option>
-                <option value="hard">Expert</option>
-            </select>
+<div id="game-scaler">
+    <div class="game-window" id="main-window">
+        <div class="controls">
+            <div>
+                Difficulty: 
+                <select id="difficulty" onchange="setupBoard()">
+                    <option value="easy">Beginner</option>
+                    <option value="medium">Intermediate</option>
+                    <option value="hard">Expert</option>
+                </select>
+            </div>
         </div>
-    </div>
 
-    <div class="header-panel">
-        <div class="lcd-display" id="mine-count-display">
-            <div class="digit"></div>
-            <div class="digit"></div>
-            <div class="digit"></div>
+        <div class="header-panel">
+            <div class="lcd-display" id="mine-count-display">
+                <div class="digit"></div>
+                <div class="digit"></div>
+                <div class="digit"></div>
+            </div>
+            <button class="smiley-btn face-smile" id="reset-btn" onmousedown="showClickFace()" onmouseup="resetFace()" onmouseleave="resetFace()" onclick="setupBoard()"></button>
+            <div class="lcd-display" id="timer-display">
+                <div class="digit"></div>
+                <div class="digit"></div>
+                <div class="digit"></div>
+            </div>
         </div>
-        <button class="smiley-btn face-smile" id="reset-btn" onmousedown="showClickFace()" onmouseup="resetFace()" onmouseleave="resetFace()" onclick="setupBoard()"></button>
-        <div class="lcd-display" id="timer-display">
-            <div class="digit"></div>
-            <div class="digit"></div>
-            <div class="digit"></div>
-        </div>
-    </div>
 
-    <div id="grid"></div>
+        <div id="grid"></div>
+    </div>
 </div>
 
 <script>
@@ -166,6 +177,12 @@
         easy: { r: 9, c: 9, m: 10 },
         medium: { r: 16, c: 16, m: 40 },
         hard: { r: 16, c: 30, m: 99 }
+    };
+
+    const sfx = {
+        win: new Audio('https://nexucore.github.io/minesweeper/assets/win.mp3'),
+        bomb: new Audio('https://nexucore.github.io/minesweeper/assets/explode.mp3'),
+        pop: new Audio('https://nexucore.github.io/minesweeper/assets/pop.mp3')
     };
 
     let gridArr = [];
@@ -181,6 +198,32 @@
     let squishedCells = [];
     let holdTimer = null;
     let wasLongTap = false;
+
+    function playSound(name) {
+        const sound = sfx[name];
+        if (sound) {
+            sound.currentTime = 0;
+            sound.play().catch(() => {});
+        }
+    }
+
+    function handleResize() {
+        const scaler = document.getElementById('game-scaler');
+        const win = document.getElementById('main-window');
+        const padding = 20; 
+        
+        const availableWidth = window.innerWidth - padding;
+        const availableHeight = window.innerHeight - padding;
+        const currentWidth = win.offsetWidth;
+        const currentHeight = win.offsetHeight;
+
+        let scale = 1;
+        if (currentWidth > availableWidth || currentHeight > availableHeight) {
+            scale = Math.min(availableWidth / currentWidth, availableHeight / currentHeight);
+        }
+        
+        scaler.style.transform = `scale(${scale})`;
+    }
 
     function showClickFace() { updateFace('pressed'); }
     function resetFace() { updateFace(mood); }
@@ -276,6 +319,9 @@
             }
         }
         gridUI.appendChild(frag);
+        
+        // Wait for layout to settle before scaling
+        setTimeout(handleResize, 10);
     }
 
     function onDown(e, y, x) {
@@ -350,6 +396,7 @@
             boom(y, x);
             return;
         }
+        playSound('pop');
         floodFill(y, x);
         checkWin();
     }
@@ -377,7 +424,6 @@
             let ry = Math.floor(Math.random() * rows);
             let rx = Math.floor(Math.random() * cols);
             let key = `${ry},${rx}`;
-            // Ensure 3x3 safety area around first click
             if (!mineKeys.has(key) && (Math.abs(ry - safeY) > 1 || Math.abs(rx - safeX) > 1)) {
                 mineKeys.add(key);
                 gridArr[ry][rx].isMine = true;
@@ -446,6 +492,7 @@
             clearInterval(clock);
             mood = 'win';
             updateFace('win');
+            playSound('win');
             drawLCD('mine-count-display', 0);
             mineKeys.forEach(key => {
                 const [my, mx] = key.split(',').map(Number);
@@ -462,6 +509,7 @@
         clearInterval(clock);
         mood = 'dead';
         updateFace('dead');
+        playSound('bomb');
         mineKeys.forEach(key => {
             const [my, mx] = key.split(',').map(Number);
             if (!gridArr[my][mx].isFlagged) {
@@ -474,6 +522,7 @@
         });
     }
 
+    window.addEventListener('resize', handleResize);
     window.onload = setupBoard;
 </script>
 
