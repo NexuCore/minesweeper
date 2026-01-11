@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Minesweeper XP</title>
     <style>
         :root {
@@ -13,34 +13,33 @@
         }
 
         body {
-            background-color: #ffffff; /* Pure white background */
+            background-color: #008080;
             margin: 0;
             display: flex;
             justify-content: center;
-            align-items: flex-start; /* Align to top for better "pop-out" feel */
-            min-height: 100vh;
-            padding-top: 20px;
+            align-items: center;
+            height: 100vh;
             font-family: 'Tahoma', sans-serif;
             user-select: none;
             -webkit-user-select: none;
+            touch-action: manipulation;
         }
 
-        /* The main container now shrinks to fit the board exactly */
         .game-window {
             background-color: var(--xp-gray);
             padding: 6px;
             border: 3px solid;
             border-color: var(--xp-white) var(--xp-shadow) var(--xp-shadow) var(--xp-white);
-            display: inline-block; /* Magic for auto-resizing to content */
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1); /* Subtle shadow for the "pop-out" effect */
+            max-width: 95vw;
+            overflow-x: auto;
         }
 
         .controls {
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             font-size: 11px;
             display: flex;
-            justify-content: flex-start;
-            padding-left: 2px;
+            gap: 10px;
+            align-items: center;
         }
 
         .header-panel {
@@ -53,7 +52,6 @@
             border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
         }
 
-        /* LCD Display */
         .lcd-display {
             background-color: black;
             display: flex;
@@ -68,7 +66,6 @@
             background-repeat: no-repeat;
         }
 
-        /* Digit mapping */
         .digit-0 { background-position: 0px 0px; }
         .digit-1 { background-position: -13px 0px; }
         .digit-2 { background-position: -26px 0px; }
@@ -81,7 +78,6 @@
         .digit-9 { background-position: -117px 0px; }
         .digit-minus { background-position: -130px 0px; }
 
-        /* Smiley Button */
         .smiley-btn {
             width: 26px;
             height: 26px;
@@ -104,7 +100,7 @@
             border: 3px solid;
             border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
             background-color: var(--xp-shadow);
-            /* Grid template is set via JS */
+            margin: 0 auto;
         }
 
         .cell {
@@ -112,16 +108,16 @@
             height: 16px;
             background-image: var(--sprite-url);
             background-repeat: no-repeat;
+            touch-action: none;
         }
 
-        /* Cell State mapping */
         .cell-blank { background-position: 0px -39px; }
         .cell-flag { background-position: -16px -39px; }
         .cell-mine-hit { background-position: -32px -39px; }
         .cell-mine-wrong { background-position: -48px -39px; }
         .cell-mine-revealed { background-position: -64px -39px; }
+        .cell-question { background-position: -80px -39px; }
 
-        /* Number mapping */
         .num-0 { background-position: 0px -23px; }
         .num-1 { background-position: -16px -23px; }
         .num-2 { background-position: -32px -23px; }
@@ -137,20 +133,27 @@
 
 <div class="game-window">
     <div class="controls">
-        <select id="difficulty" onchange="initGame()">
-            <option value="easy">Beginner</option>
-            <option value="medium">Intermediate</option>
-            <option value="hard">Expert</option>
-        </select>
+        <div>
+            Difficulty: 
+            <select id="difficulty" onchange="initGame()">
+                <option value="easy">Beginner</option>
+                <option value="medium">Intermediate</option>
+                <option value="hard">Expert</option>
+            </select>
+        </div>
     </div>
 
     <div class="header-panel">
         <div class="lcd-display" id="mine-count-display">
-            <div class="digit"></div><div class="digit"></div><div class="digit"></div>
+            <div class="digit"></div>
+            <div class="digit"></div>
+            <div class="digit"></div>
         </div>
         <button class="smiley-btn face-smile" id="reset-btn" onmousedown="handleFaceDown()" onmouseup="handleFaceUp()" onmouseleave="handleFaceUp()" onclick="initGame()"></button>
         <div class="lcd-display" id="timer-display">
-            <div class="digit"></div><div class="digit"></div><div class="digit"></div>
+            <div class="digit"></div>
+            <div class="digit"></div>
+            <div class="digit"></div>
         </div>
     </div>
 
@@ -175,6 +178,8 @@
     let isMouseDown = false;
     let currentFace = 'smile';
     let depressedCells = [];
+    let longPressTimer = null;
+    let isLongPress = false;
 
     function handleFaceDown() { setFace('pressed'); }
     function handleFaceUp() { setFace(currentFace); }
@@ -218,9 +223,7 @@
         setLCD('timer-display', 0);
         setLCD('mine-count-display', mines);
 
-        // Auto-resize logic: set explicit dimensions for the grid
         grid.style.gridTemplateColumns = `repeat(${cols}, 16px)`;
-        grid.style.gridTemplateRows = `repeat(${rows}, 16px)`;
         grid.innerHTML = '';
         board = [];
 
@@ -235,6 +238,29 @@
                 cellEl.addEventListener('mouseup', (e) => handleMouseUp(e, r, c));
                 cellEl.addEventListener('mouseenter', (e) => handleMouseEnter(e, r, c));
                 cellEl.addEventListener('mouseleave', (e) => handleMouseLeave(e, r, c));
+                
+                cellEl.addEventListener('touchstart', (e) => {
+                    if (gameOver) return;
+                    isLongPress = false;
+                    longPressTimer = setTimeout(() => {
+                        isLongPress = true;
+                        toggleFlag(r, c);
+                        clearDepressed();
+                        setFace(currentFace);
+                    }, 500);
+                    handleMouseDown({ button: 0 }, r, c);
+                }, { passive: true });
+
+                cellEl.addEventListener('touchend', (e) => {
+                    clearTimeout(longPressTimer);
+                    if (isLongPress) {
+                        isMouseDown = false;
+                        e.preventDefault();
+                    } else {
+                        handleMouseUp({ button: 0 }, r, c);
+                    }
+                });
+
                 cellEl.addEventListener('contextmenu', e => e.preventDefault());
 
                 fragment.appendChild(cellEl);
@@ -344,6 +370,7 @@
     function placeMines(exR, exC) {
         const level = document.getElementById('difficulty').value;
         const { rows, cols, mines } = CONFIG[level];
+        
         let placed = 0;
         while (placed < mines) {
             let r = Math.floor(Math.random() * rows);
@@ -411,15 +438,24 @@
     function stopTimer() { clearInterval(timerInterval); }
 
     function checkWin() {
-        const rows = board.length, cols = board[0].length;
+        const rows = board.length;
+        const cols = board[0].length;
         const level = document.getElementById('difficulty').value;
         const mines = CONFIG[level].mines;
+        
         if (revealedCount === (rows * cols) - mines) {
             gameOver = true;
             stopTimer();
             currentFace = 'win';
             setFace('win');
             setLCD('mine-count-display', 0);
+            mineLocations.forEach(key => {
+                const [r, c] = key.split(',').map(Number);
+                if (!board[r][c].flagged) {
+                    board[r][c].flagged = true;
+                    board[r][c].element.className = 'cell cell-flag';
+                }
+            });
         }
     }
 
