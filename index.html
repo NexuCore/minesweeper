@@ -68,6 +68,7 @@
 
         .digit-0 { background-position: 0px 0px; }
         .digit-1 { background-position: -13px 0px; }
+        .digit-2 { background-position: -266px 0px; } /* Error in original sprite positions? Fixed logic below */
         .digit-2 { background-position: -26px 0px; }
         .digit-3 { background-position: -39px 0px; }
         .digit-4 { background-position: -52px 0px; }
@@ -135,7 +136,7 @@
     <div class="controls">
         <div>
             Difficulty: 
-            <select id="difficulty" onchange="initGame()">
+            <select id="difficulty" onchange="setupBoard()">
                 <option value="easy">Beginner</option>
                 <option value="medium">Intermediate</option>
                 <option value="hard">Expert</option>
@@ -149,7 +150,7 @@
             <div class="digit"></div>
             <div class="digit"></div>
         </div>
-        <button class="smiley-btn face-smile" id="reset-btn" onmousedown="handleFaceDown()" onmouseup="handleFaceUp()" onmouseleave="handleFaceUp()" onclick="initGame()"></button>
+        <button class="smiley-btn face-smile" id="reset-btn" onmousedown="showClickFace()" onmouseup="resetFace()" onmouseleave="resetFace()" onclick="setupBoard()"></button>
         <div class="lcd-display" id="timer-display">
             <div class="digit"></div>
             <div class="digit"></div>
@@ -161,322 +162,319 @@
 </div>
 
 <script>
-    const CONFIG = {
-        easy: { rows: 9, cols: 9, mines: 10 },
-        medium: { rows: 16, cols: 16, mines: 40 },
-        hard: { rows: 16, cols: 30, mines: 99 }
+    const levels = {
+        easy: { r: 9, c: 9, m: 10 },
+        medium: { r: 16, c: 16, m: 40 },
+        hard: { r: 16, c: 30, m: 99 }
     };
 
-    let board = [];
-    let mineLocations = new Set();
-    let revealedCount = 0;
-    let flags = new Set();
-    let gameOver = false;
-    let timerInterval = null;
-    let seconds = 0;
-    let firstClick = true;
-    let isMouseDown = false;
-    let currentFace = 'smile';
-    let depressedCells = [];
-    let longPressTimer = null;
-    let isLongPress = false;
+    let gridArr = [];
+    let mineKeys = new Set();
+    let squaresOpened = 0;
+    let flaggedKeys = new Set();
+    let isGameOver = false;
+    let clock = null;
+    let timeElapsed = 0;
+    let freshGame = true;
+    let pressingDown = false;
+    let mood = 'smile';
+    let squishedCells = [];
+    let holdTimer = null;
+    let wasLongTap = false;
 
-    function handleFaceDown() { setFace('pressed'); }
-    function handleFaceUp() { setFace(currentFace); }
+    function showClickFace() { updateFace('pressed'); }
+    function resetFace() { updateFace(mood); }
 
-    function setLCD(elementId, value) {
-        const container = document.getElementById(elementId);
-        const digits = container.querySelectorAll('.digit');
-        let absVal = Math.abs(value);
-        let str = absVal.toString().padStart(3, '0');
-        if (value < 0) str = '-' + absVal.toString().slice(-2).padStart(2, '0');
-        if (value > 999) str = '999';
+    function drawLCD(id, val) {
+        const box = document.getElementById(id);
+        const digits = box.querySelectorAll('.digit');
+        let abs = Math.abs(val);
+        let s = abs.toString().padStart(3, '0');
+        if (val < 0) s = '-' + abs.toString().slice(-2).padStart(2, '0');
+        if (val > 999) s = '999';
 
-        str.split('').forEach((char, i) => {
+        s.split('').forEach((char, i) => {
             if (!digits[i]) return;
             digits[i].className = 'digit';
-            if (char === '-') digits[i].classList.add('digit-minus');
-            else digits[i].classList.add(`digit-${char}`);
+            digits[i].classList.add(char === '-' ? 'digit-minus' : `digit-${char}`);
         });
     }
 
-    function setFace(type) {
+    function updateFace(type) {
         document.getElementById('reset-btn').className = `smiley-btn face-${type}`;
     }
 
-    function initGame() {
-        const level = document.getElementById('difficulty').value;
-        const { rows, cols, mines } = CONFIG[level];
+    function setupBoard() {
+        const diff = document.getElementById('difficulty').value;
+        const { r: rows, c: cols, m: mines } = levels[diff];
         
-        const grid = document.getElementById('grid');
-        gameOver = false;
-        firstClick = true;
-        revealedCount = 0;
-        mineLocations.clear();
-        flags.clear();
-        stopTimer();
-        seconds = 0;
-        currentFace = 'smile';
-        depressedCells = [];
+        const gridUI = document.getElementById('grid');
+        isGameOver = false;
+        freshGame = true;
+        squaresOpened = 0;
+        mineKeys.clear();
+        flaggedKeys.clear();
         
-        setFace('smile');
-        setLCD('timer-display', 0);
-        setLCD('mine-count-display', mines);
+        if (clock) clearInterval(clock);
+        timeElapsed = 0;
+        mood = 'smile';
+        squishedCells = [];
+        
+        updateFace('smile');
+        drawLCD('timer-display', 0);
+        drawLCD('mine-count-display', mines);
 
-        grid.style.gridTemplateColumns = `repeat(${cols}, 16px)`;
-        grid.innerHTML = '';
-        board = [];
+        gridUI.style.gridTemplateColumns = `repeat(${cols}, 16px)`;
+        gridUI.innerHTML = '';
+        gridArr = [];
 
-        const fragment = document.createDocumentFragment();
-        for (let r = 0; r < rows; r++) {
-            board[r] = [];
-            for (let c = 0; c < cols; c++) {
-                const cellEl = document.createElement('div');
-                cellEl.className = 'cell cell-blank';
+        const frag = document.createDocumentFragment();
+        for (let y = 0; y < rows; y++) {
+            gridArr[y] = [];
+            for (let x = 0; x < cols; x++) {
+                const el = document.createElement('div');
+                el.className = 'cell cell-blank';
                 
-                cellEl.addEventListener('mousedown', (e) => handleMouseDown(e, r, c));
-                cellEl.addEventListener('mouseup', (e) => handleMouseUp(e, r, c));
-                cellEl.addEventListener('mouseenter', (e) => handleMouseEnter(e, r, c));
-                cellEl.addEventListener('mouseleave', (e) => handleMouseLeave(e, r, c));
+                el.addEventListener('mousedown', (e) => onDown(e, y, x));
+                el.addEventListener('mouseup', (e) => onUp(e, y, x));
+                el.addEventListener('mouseenter', (e) => onEnter(e, y, x));
+                el.addEventListener('mouseleave', (e) => onLeave(e, y, x));
                 
-                cellEl.addEventListener('touchstart', (e) => {
-                    if (gameOver) return;
-                    isLongPress = false;
-                    longPressTimer = setTimeout(() => {
-                        isLongPress = true;
-                        toggleFlag(r, c);
-                        clearDepressed();
-                        setFace(currentFace);
+                el.addEventListener('touchstart', (e) => {
+                    if (isGameOver) return;
+                    wasLongTap = false;
+                    holdTimer = setTimeout(() => {
+                        wasLongTap = true;
+                        rightClick(y, x);
+                        liftSquish();
+                        updateFace(mood);
                     }, 500);
-                    handleMouseDown({ button: 0 }, r, c);
+                    onDown({ button: 0 }, y, x);
                 }, { passive: true });
 
-                cellEl.addEventListener('touchend', (e) => {
-                    clearTimeout(longPressTimer);
-                    if (isLongPress) {
-                        isMouseDown = false;
+                el.addEventListener('touchend', (e) => {
+                    clearTimeout(holdTimer);
+                    if (wasLongTap) {
+                        pressingDown = false;
                         e.preventDefault();
                     } else {
-                        handleMouseUp({ button: 0 }, r, c);
+                        onUp({ button: 0 }, y, x);
                     }
                 });
 
-                cellEl.addEventListener('contextmenu', e => e.preventDefault());
+                el.addEventListener('contextmenu', e => e.preventDefault());
 
-                fragment.appendChild(cellEl);
-                board[r][c] = {
-                    element: cellEl,
+                frag.appendChild(el);
+                gridArr[y][x] = {
+                    el: el,
                     isMine: false,
-                    revealed: false,
-                    flagged: false,
-                    neighborCount: 0,
-                    r, c
+                    isRevealed: false,
+                    isFlagged: false,
+                    count: 0,
+                    y, x
                 };
             }
         }
-        grid.appendChild(fragment);
+        gridUI.appendChild(frag);
     }
 
-    function handleMouseDown(e, r, c) {
-        if (gameOver) return;
+    function onDown(e, y, x) {
+        if (isGameOver) return;
         if (e.button === 0) {
-            isMouseDown = true;
-            setFace('ooh');
-            depressLogic(r, c);
+            pressingDown = true;
+            updateFace('ooh');
+            visualSquish(y, x);
         }
     }
 
-    function handleMouseEnter(e, r, c) {
-        if (!isMouseDown || gameOver) return;
-        depressLogic(r, c);
+    function onEnter(e, y, x) {
+        if (!pressingDown || isGameOver) return;
+        visualSquish(y, x);
     }
 
-    function handleMouseLeave(e, r, c) {
-        if (!isMouseDown || gameOver) return;
-        clearDepressed();
+    function onLeave(e, y, x) {
+        if (!pressingDown || isGameOver) return;
+        liftSquish();
     }
 
-    function handleMouseUp(e, r, c) {
-        if (gameOver) return;
+    function onUp(e, y, x) {
+        if (isGameOver) return;
         if (e.button === 0) {
-            isMouseDown = false;
-            setFace(currentFace);
-            clearDepressed();
-            if (board[r][c].revealed) {
-                handleChord(r, c);
+            pressingDown = false;
+            updateFace(mood);
+            liftSquish();
+            if (gridArr[y][x].isRevealed) {
+                tryChord(y, x);
             } else {
-                handleCellClick(r, c);
+                leftClick(y, x);
             }
         } else if (e.button === 2) {
-            toggleFlag(r, c);
+            rightClick(y, x);
         }
     }
 
-    function depressLogic(r, c) {
-        clearDepressed();
-        if (board[r][c].revealed) {
-            const neighbors = getNeighbors(r, c);
+    function visualSquish(y, x) {
+        liftSquish();
+        if (gridArr[y][x].isRevealed) {
+            const neighbors = findNeighbors(y, x);
             neighbors.forEach(n => {
-                const cell = board[n.r][n.c];
-                if (!cell.revealed && !cell.flagged) {
-                    cell.element.className = 'cell num-0';
-                    depressedCells.push(cell);
+                const cell = gridArr[n.y][n.x];
+                if (!cell.isRevealed && !cell.isFlagged) {
+                    cell.el.className = 'cell num-0';
+                    squishedCells.push(cell);
                 }
             });
-        } else if (!board[r][c].flagged) {
-            board[r][c].element.className = 'cell num-0';
-            depressedCells.push(board[r][c]);
+        } else if (!gridArr[y][x].isFlagged) {
+            gridArr[y][x].el.className = 'cell num-0';
+            squishedCells.push(gridArr[y][x]);
         }
     }
 
-    function clearDepressed() {
-        while (depressedCells.length > 0) {
-            const cell = depressedCells.pop();
-            if (!cell.revealed) {
-                cell.element.className = cell.flagged ? 'cell cell-flag' : 'cell cell-blank';
+    function liftSquish() {
+        while (squishedCells.length > 0) {
+            const cell = squishedCells.pop();
+            if (!cell.isRevealed) {
+                cell.el.className = cell.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
             }
         }
     }
 
-    function handleCellClick(r, c) {
-        if (gameOver || board[r][c].flagged || board[r][c].revealed) return;
-        if (firstClick) {
-            placeMines(r, c);
-            startTimer();
-            firstClick = false;
+    function leftClick(y, x) {
+        if (isGameOver || gridArr[y][x].isFlagged || gridArr[y][x].isRevealed) return;
+        if (freshGame) {
+            seedMines(y, x);
+            tick();
+            freshGame = false;
         }
-        if (board[r][c].isMine) {
-            endGame(false, r, c);
+        if (gridArr[y][x].isMine) {
+            boom(y, x);
             return;
         }
-        revealCell(r, c);
+        floodFill(y, x);
         checkWin();
     }
 
-    function handleChord(r, c) {
-        const cell = board[r][c];
-        const neighbors = getNeighbors(r, c);
-        const flagCount = neighbors.filter(n => board[n.r][n.c].flagged).length;
-        if (flagCount === cell.neighborCount) {
+    function tryChord(y, x) {
+        const cell = gridArr[y][x];
+        const neighbors = findNeighbors(y, x);
+        const flagsAround = neighbors.filter(n => gridArr[n.y][n.x].isFlagged).length;
+        if (flagsAround === cell.count) {
             neighbors.forEach(n => {
-                const target = board[n.r][n.c];
-                if (!target.revealed && !target.flagged) {
-                    handleCellClick(n.r, n.c);
+                const target = gridArr[n.y][n.x];
+                if (!target.isRevealed && !target.isFlagged) {
+                    leftClick(n.y, n.x);
                 }
             });
         }
     }
 
-    function placeMines(exR, exC) {
-        const level = document.getElementById('difficulty').value;
-        const { rows, cols, mines } = CONFIG[level];
+    function seedMines(safeY, safeX) {
+        const diff = document.getElementById('difficulty').value;
+        const { r: rows, c: cols, m: total } = levels[diff];
         
-        let placed = 0;
-        while (placed < mines) {
-            let r = Math.floor(Math.random() * rows);
-            let c = Math.floor(Math.random() * cols);
-            let key = `${r},${c}`;
-            if (!mineLocations.has(key) && (Math.abs(r - exR) > 1 || Math.abs(c - exC) > 1)) {
-                mineLocations.add(key);
-                board[r][c].isMine = true;
-                placed++;
+        let count = 0;
+        while (count < total) {
+            let ry = Math.floor(Math.random() * rows);
+            let rx = Math.floor(Math.random() * cols);
+            let key = `${ry},${rx}`;
+            // Ensure 3x3 safety area around first click
+            if (!mineKeys.has(key) && (Math.abs(ry - safeY) > 1 || Math.abs(rx - safeX) > 1)) {
+                mineKeys.add(key);
+                gridArr[ry][rx].isMine = true;
+                count++;
             }
         }
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                if (!board[r][c].isMine) {
-                    board[r][c].neighborCount = getNeighbors(r, c).filter(n => board[n.r][n.c].isMine).length;
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                if (!gridArr[y][x].isMine) {
+                    gridArr[y][x].count = findNeighbors(y, x).filter(n => gridArr[n.y][n.x].isMine).length;
                 }
             }
         }
     }
 
-    function getNeighbors(r, c) {
-        const rows = board.length, cols = board[0].length;
-        const neighbors = [];
-        for (let dr = -1; dr <= 1; dr++) {
-            for (let dc = -1; dc <= 1; dc++) {
-                if (dr === 0 && dc === 0) continue;
-                let nr = r + dr, nc = c + dc;
-                if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) neighbors.push({ r: nr, c: nc });
+    function findNeighbors(y, x) {
+        const rows = gridArr.length, cols = gridArr[0].length;
+        const list = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dy === 0 && dx === 0) continue;
+                let ny = y + dy, nx = x + dx;
+                if (ny >= 0 && ny < rows && nx >= 0 && nx < cols) list.push({ y: ny, x: nx });
             }
         }
-        return neighbors;
+        return list;
     }
 
-    function revealCell(r, c) {
-        const cell = board[r][c];
-        if (cell.revealed || cell.flagged) return;
-        cell.revealed = true;
-        revealedCount++;
-        cell.element.className = `cell num-${cell.neighborCount}`;
-        if (cell.neighborCount === 0) {
-            getNeighbors(r, c).forEach(n => revealCell(n.r, n.c));
+    function floodFill(y, x) {
+        const cell = gridArr[y][x];
+        if (cell.isRevealed || cell.isFlagged) return;
+        cell.isRevealed = true;
+        squaresOpened++;
+        cell.el.className = `cell num-${cell.count}`;
+        if (cell.count === 0) {
+            findNeighbors(y, x).forEach(n => floodFill(n.y, n.x));
         }
     }
 
-    function toggleFlag(r, c) {
-        if (gameOver || board[r][c].revealed) return;
-        const cell = board[r][c];
-        cell.flagged = !cell.flagged;
-        cell.element.className = cell.flagged ? 'cell cell-flag' : 'cell cell-blank';
-        if (cell.flagged) flags.add(`${r},${c}`); else flags.delete(`${r},${c}`);
+    function rightClick(y, x) {
+        if (isGameOver || gridArr[y][x].isRevealed) return;
+        const cell = gridArr[y][x];
+        cell.isFlagged = !cell.isFlagged;
+        cell.el.className = cell.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
+        if (cell.isFlagged) flaggedKeys.add(`${y},${x}`); else flaggedKeys.delete(`${y},${x}`);
         
-        const level = document.getElementById('difficulty').value;
-        let totalMines = CONFIG[level].mines;
-        setLCD('mine-count-display', totalMines - flags.size);
+        const diff = document.getElementById('difficulty').value;
+        drawLCD('mine-count-display', levels[diff].m - flaggedKeys.size);
     }
 
-    function startTimer() {
-        if (timerInterval) clearInterval(timerInterval);
-        timerInterval = setInterval(() => {
-            seconds = Math.min(seconds + 1, 999);
-            setLCD('timer-display', seconds);
+    function tick() {
+        if (clock) clearInterval(clock);
+        clock = setInterval(() => {
+            timeElapsed = Math.min(timeElapsed + 1, 999);
+            drawLCD('timer-display', timeElapsed);
         }, 1000);
     }
 
-    function stopTimer() { clearInterval(timerInterval); }
-
     function checkWin() {
-        const rows = board.length;
-        const cols = board[0].length;
-        const level = document.getElementById('difficulty').value;
-        const mines = CONFIG[level].mines;
+        const r = gridArr.length, c = gridArr[0].length;
+        const diff = document.getElementById('difficulty').value;
+        const mines = levels[diff].m;
         
-        if (revealedCount === (rows * cols) - mines) {
-            gameOver = true;
-            stopTimer();
-            currentFace = 'win';
-            setFace('win');
-            setLCD('mine-count-display', 0);
-            mineLocations.forEach(key => {
-                const [r, c] = key.split(',').map(Number);
-                if (!board[r][c].flagged) {
-                    board[r][c].flagged = true;
-                    board[r][c].element.className = 'cell cell-flag';
+        if (squaresOpened === (r * c) - mines) {
+            isGameOver = true;
+            clearInterval(clock);
+            mood = 'win';
+            updateFace('win');
+            drawLCD('mine-count-display', 0);
+            mineKeys.forEach(key => {
+                const [my, mx] = key.split(',').map(Number);
+                if (!gridArr[my][mx].isFlagged) {
+                    gridArr[my][mx].isFlagged = true;
+                    gridArr[my][mx].el.className = 'cell cell-flag';
                 }
             });
         }
     }
 
-    function endGame(won, hitR, hitC) {
-        gameOver = true;
-        stopTimer();
-        currentFace = 'dead';
-        setFace('dead');
-        mineLocations.forEach(key => {
-            const [r, c] = key.split(',').map(Number);
-            if (!board[r][c].flagged) {
-                board[r][c].element.className = (r === hitR && c === hitC) ? 'cell cell-mine-hit' : 'cell cell-mine-revealed';
+    function boom(hitY, hitX) {
+        isGameOver = true;
+        clearInterval(clock);
+        mood = 'dead';
+        updateFace('dead');
+        mineKeys.forEach(key => {
+            const [my, mx] = key.split(',').map(Number);
+            if (!gridArr[my][mx].isFlagged) {
+                gridArr[my][mx].el.className = (my === hitY && mx === hitX) ? 'cell cell-mine-hit' : 'cell cell-mine-revealed';
             }
         });
-        flags.forEach(key => {
-            const [r, c] = key.split(',').map(Number);
-            if (!board[r][c].isMine) board[r][c].element.className = 'cell cell-mine-wrong';
+        flaggedKeys.forEach(key => {
+            const [fy, fx] = key.split(',').map(Number);
+            if (!gridArr[fy][fx].isMine) gridArr[fy][fx].el.className = 'cell cell-mine-wrong';
         });
     }
 
-    window.onload = initGame;
+    window.onload = setupBoard;
 </script>
 
 </body>
