@@ -24,16 +24,29 @@
             font-family: 'Tahoma', sans-serif;
             user-select: none;
             -webkit-user-select: none;
-            touch-action: manipulation;
+            touch-action: none;
             overflow: hidden;
         }
 
+        #viewport {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
         #game-scaler {
+            position: absolute;
+            cursor: grab;
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: transform 0.1s ease-out;
-            transform-origin: center center;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        #game-scaler:active {
+            cursor: grabbing;
         }
 
         .game-window {
@@ -122,7 +135,6 @@
             height: 16px;
             background-image: var(--sprite-url);
             background-repeat: no-repeat;
-            touch-action: none;
         }
 
         .cell-blank { background-position: 0px -39px; }
@@ -145,34 +157,32 @@
 </head>
 <body>
 
-<div id="game-scaler">
-    <div class="game-window" id="main-window">
-        <div class="controls">
-            <div>
-                Difficulty: 
-                <select id="difficulty" onchange="setupBoard()">
-                    <option value="easy">Beginner</option>
-                    <option value="medium">Intermediate</option>
-                    <option value="hard">Expert</option>
-                </select>
+<div id="viewport">
+    <div id="game-scaler">
+        <div class="game-window" id="main-window">
+            <div class="controls">
+                <div>
+                    Difficulty: 
+                    <select id="difficulty" onchange="setupBoard(true)">
+                        <option value="easy">Beginner</option>
+                        <option value="medium">Intermediate</option>
+                        <option value="hard">Expert</option>
+                    </select>
+                </div>
             </div>
-        </div>
 
-        <div class="header-panel" id="header-panel">
-            <div class="lcd-display" id="mine-count-display">
-                <div class="digit"></div>
-                <div class="digit"></div>
-                <div class="digit"></div>
+            <div class="header-panel" id="header-panel">
+                <div class="lcd-display" id="mine-count-display">
+                    <div class="digit"></div><div class="digit"></div><div class="digit"></div>
+                </div>
+                <button class="smiley-btn face-smile" id="reset-btn" onclick="setupBoard(false)"></button>
+                <div class="lcd-display" id="timer-display">
+                    <div class="digit"></div><div class="digit"></div><div class="digit"></div>
+                </div>
             </div>
-            <button class="smiley-btn face-smile" id="reset-btn" onmousedown="showClickFace()" onmouseup="resetFace()" onmouseleave="resetFace()" onclick="setupBoard()"></button>
-            <div class="lcd-display" id="timer-display">
-                <div class="digit"></div>
-                <div class="digit"></div>
-                <div class="digit"></div>
-            </div>
-        </div>
 
-        <div id="grid"></div>
+            <div id="grid"></div>
+        </div>
     </div>
 </div>
 
@@ -197,113 +207,153 @@
     let clock = null;
     let timeElapsed = 0;
     let freshGame = true;
-    let pressingDown = false;
     let mood = 'smile';
     let squishedCells = [];
+    
+    // Zoom & Pan State
+    let scale = 1;
+    let posX = 0;
+    let posY = 0;
+    let startDist = 0;
+    let startScale = 1;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+    let isDragging = false;
+    let hasMovedSignificantly = false;
+
+    // Mobile specific interaction
     let holdTimer = null;
     let wasLongTap = false;
-    let lastExpertOrientation = null; // 'portrait' or 'landscape'
+    let touchStartTime = 0;
+    let touchStartPos = { x: 0, y: 0 };
 
-    function isMobilePhone() {
-        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-        const isMobile = /android|iphone|ipod|windows phone/i.test(userAgent.toLowerCase());
-        const isTablet = /ipad|tablet|(android(?!.*mobile))/i.test(userAgent.toLowerCase());
-        return isMobile && !isTablet;
-    }
-
-    function getScreenOrientation() {
-        return window.innerHeight > window.innerWidth ? 'portrait' : 'landscape';
-    }
+    const scaler = document.getElementById('game-scaler');
+    const viewport = document.getElementById('viewport');
 
     function playSound(name) {
         const sound = sfx[name];
-        if (sound) {
-            sound.currentTime = 0;
-            sound.play().catch(() => {});
-        }
+        if (sound) { sound.currentTime = 0; sound.play().catch(() => {}); }
     }
 
-    function handleResize() {
-        const scaler = document.getElementById('game-scaler');
+    function updateTransform() {
+        scaler.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
+    }
+
+    function resetView() {
         const win = document.getElementById('main-window');
-        const diff = document.getElementById('difficulty').value;
-        const padding = 20; 
+        const vW = viewport.clientWidth;
+        const vH = viewport.clientHeight;
+        const gW = win.offsetWidth;
+        const gH = win.offsetHeight;
+
+        scale = Math.min((vW - 40) / gW, (vH - 120) / gH);
+        if (scale > 2.5) scale = 2.5;
+        if (scale < 0.5) scale = 0.5;
+
+        posX = (vW - gW * scale) / 2;
+        posY = (vH - gH * scale) / 2;
         
-        // Auto-rebuild board if orientation changes during an Expert game
-        if (diff === 'hard' && isMobilePhone()) {
-            const currentOrientation = getScreenOrientation();
-            if (currentOrientation !== lastExpertOrientation) {
-                setupBoard();
-                return; // setupBoard calls handleResize at the end
+        updateTransform();
+    }
+
+    // --- ZOOM AND PAN LOGIC ---
+    viewport.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = -e.deltaY;
+        const factor = 1.1;
+        const zoom = delta > 0 ? factor : 1 / factor;
+        const mouseX = (e.clientX - posX) / scale;
+        const mouseY = (e.clientY - posY) / scale;
+
+        scale = Math.max(0.1, Math.min(scale * zoom, 10));
+        posX = e.clientX - mouseX * scale;
+        posY = e.clientY - mouseY * scale;
+        updateTransform();
+    }, { passive: false });
+
+    viewport.addEventListener('mousedown', (e) => {
+        if (e.button === 1 || (e.button === 0 && e.target === viewport)) {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            posX += e.clientX - lastMouseX;
+            posY += e.clientY - lastMouseY;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            updateTransform();
+        }
+    });
+
+    window.addEventListener('mouseup', () => isDragging = false);
+
+    viewport.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+            startDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+            startScale = scale;
+        } else if (e.touches.length === 1) {
+            isDragging = true;
+            lastMouseX = e.touches[0].pageX;
+            lastMouseY = e.touches[0].pageY;
+            touchStartPos = { x: lastMouseX, y: lastMouseY };
+            hasMovedSignificantly = false;
+        }
+    }, { passive: true });
+
+    viewport.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2) {
+            const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+            const zoom = dist / startDist;
+            const midX = (e.touches[0].pageX + e.touches[1].pageX) / 2;
+            const midY = (e.touches[0].pageY + e.touches[1].pageY) / 2;
+            const worldX = (midX - posX) / scale;
+            const worldY = (midY - posY) / scale;
+
+            scale = Math.max(0.1, Math.min(startScale * zoom, 10));
+            posX = midX - worldX * scale;
+            posY = midY - worldY * scale;
+            updateTransform();
+            hasMovedSignificantly = true;
+        } else if (e.touches.length === 1 && isDragging) {
+            const dx = e.touches[0].pageX - lastMouseX;
+            const dy = e.touches[0].pageY - lastMouseY;
+            if (Math.hypot(e.touches[0].pageX - touchStartPos.x, e.touches[0].pageY - touchStartPos.y) > 10) {
+                hasMovedSignificantly = true;
             }
+            posX += dx;
+            posY += dy;
+            lastMouseX = e.touches[0].pageX;
+            lastMouseY = e.touches[0].pageY;
+            updateTransform();
         }
+    }, { passive: true });
 
-        scaler.style.transform = 'scale(1)';
-        
-        const availableWidth = window.innerWidth - padding;
-        const availableHeight = window.innerHeight - padding;
-        const currentWidth = win.offsetWidth;
-        const currentHeight = win.offsetHeight;
+    viewport.addEventListener('touchend', () => isDragging = false);
 
-        let scale = 1;
-        if (currentWidth > availableWidth || currentHeight > availableHeight) {
-            scale = Math.min(availableWidth / currentWidth, availableHeight / currentHeight);
-        }
-        
-        scaler.style.transform = `scale(${scale})`;
-    }
+    // --- GAME LOGIC ---
 
-    function showClickFace() { updateFace('pressed'); }
-    function resetFace() { updateFace(mood); }
-
-    function drawLCD(id, val) {
-        const box = document.getElementById(id);
-        const digits = box.querySelectorAll('.digit');
-        let abs = Math.abs(val);
-        let s = abs.toString().padStart(3, '0');
-        if (val < 0) s = '-' + abs.toString().slice(-2).padStart(2, '0');
-        if (val > 999) s = '999';
-
-        s.split('').forEach((char, i) => {
-            if (!digits[i]) return;
-            digits[i].className = 'digit';
-            digits[i].classList.add(char === '-' ? 'digit-minus' : `digit-${char}`);
-        });
-    }
-
-    function updateFace(type) {
-        document.getElementById('reset-btn').className = `smiley-btn face-${type}`;
-    }
-
-    function setupBoard() {
+    /**
+     * @param {boolean} shouldResetView - If true, re-centers and re-zooms the camera.
+     */
+    function setupBoard(shouldResetView = false) {
         const diff = document.getElementById('difficulty').value;
         let { r: rows, c: cols, m: mines } = levels[diff];
         
-        if (diff === 'hard') {
-            const orientation = getScreenOrientation();
-            lastExpertOrientation = orientation;
-            if (isMobilePhone() && orientation === 'portrait') {
-                rows = 30;
-                cols = 16;
-            } else {
-                rows = 16;
-                cols = 30;
-            }
+        if (window.innerHeight > window.innerWidth && diff === 'hard') {
+            rows = 30; cols = 16;
         }
-        
+
         const gridUI = document.getElementById('grid');
         const header = document.getElementById('header-panel');
         
-        isGameOver = false;
-        freshGame = true;
-        squaresOpened = 0;
-        mineKeys.clear();
-        flaggedKeys.clear();
-        
+        isGameOver = false; freshGame = true; squaresOpened = 0;
+        mineKeys.clear(); flaggedKeys.clear();
         if (clock) clearInterval(clock);
-        timeElapsed = 0;
-        mood = 'smile';
-        squishedCells = [];
+        timeElapsed = 0; mood = 'smile'; squishedCells = [];
         
         updateFace('smile');
         drawLCD('timer-display', 0);
@@ -312,111 +362,93 @@
         gridUI.style.gridTemplateColumns = `repeat(${cols}, 16px)`;
         gridUI.style.width = `${cols * 16}px`;
         header.style.width = `${cols * 16 + 6}px`; 
-        
         gridUI.innerHTML = '';
         gridArr = [];
 
-        const frag = document.createDocumentFragment();
         for (let y = 0; y < rows; y++) {
             gridArr[y] = [];
             for (let x = 0; x < cols; x++) {
                 const el = document.createElement('div');
                 el.className = 'cell cell-blank';
                 
-                el.addEventListener('mousedown', (e) => onDown(e, y, x));
-                el.addEventListener('mouseup', (e) => onUp(e, y, x));
-                el.addEventListener('mouseenter', (e) => onEnter(e, y, x));
-                el.addEventListener('mouseleave', (e) => onLeave(e, y, x));
-                
+                el.addEventListener('mousedown', (e) => {
+                    if (e.button === 0) handleInteractionStart(y, x);
+                    if (e.button === 2) rightClick(y, x);
+                });
+                el.addEventListener('mouseup', (e) => {
+                    if (e.button === 0) handleInteractionEnd(y, x);
+                });
+
                 el.addEventListener('touchstart', (e) => {
-                    if (isGameOver) return;
-                    wasLongTap = false;
-                    holdTimer = setTimeout(() => {
-                        wasLongTap = true;
-                        rightClick(y, x);
+                    if (e.touches.length > 1) {
+                        clearTimeout(holdTimer);
                         liftSquish();
-                        updateFace(mood);
-                    }, 500);
-                    onDown({ button: 0 }, y, x);
+                        return;
+                    }
+                    hasMovedSignificantly = false;
+                    holdTimer = setTimeout(() => {
+                        if (!hasMovedSignificantly) {
+                            wasLongTap = true;
+                            rightClick(y, x);
+                            liftSquish();
+                        }
+                    }, 400);
+                    handleInteractionStart(y, x);
                 }, { passive: true });
 
                 el.addEventListener('touchend', (e) => {
                     clearTimeout(holdTimer);
-                    if (wasLongTap) {
-                        pressingDown = false;
-                        if (e.cancelable) e.preventDefault();
-                    } else {
-                        onUp({ button: 0 }, y, x);
+                    if (!wasLongTap && !hasMovedSignificantly) {
+                        handleInteractionEnd(y, x);
                     }
+                    wasLongTap = false;
                 });
 
                 el.addEventListener('contextmenu', e => e.preventDefault());
 
-                frag.appendChild(el);
-                gridArr[y][x] = {
-                    el: el,
-                    isMine: false,
-                    isRevealed: false,
-                    isFlagged: false,
-                    count: 0,
-                    y, x
-                };
+                gridUI.appendChild(el);
+                gridArr[y][x] = { el, isMine: false, isRevealed: false, isFlagged: false, count: 0, y, x };
             }
         }
-        gridUI.appendChild(frag);
         
-        setTimeout(handleResize, 0);
-    }
-
-    function onDown(e, y, x) {
-        if (isGameOver) return;
-        if (e.button === 0) {
-            pressingDown = true;
-            updateFace('ooh');
-            visualSquish(y, x);
+        // Only reset camera position if difficulty changed
+        if (shouldResetView) {
+            requestAnimationFrame(() => resetView());
         }
     }
 
-    function onEnter(e, y, x) {
-        if (!pressingDown || isGameOver) return;
+    function handleInteractionStart(y, x) {
+        if (isGameOver) return;
+        updateFace('ooh');
         visualSquish(y, x);
     }
 
-    function onLeave(e, y, x) {
-        if (!pressingDown || isGameOver) return;
-        liftSquish();
-    }
-
-    function onUp(e, y, x) {
-        if (isGameOver) return;
-        if (e.button === 0) {
-            pressingDown = false;
-            updateFace(mood);
+    function handleInteractionEnd(y, x) {
+        if (isGameOver || hasMovedSignificantly) {
             liftSquish();
-            if (gridArr[y][x].isRevealed) {
-                tryChord(y, x);
-            } else {
-                leftClick(y, x);
-            }
-        } else if (e.button === 2) {
-            rightClick(y, x);
+            updateFace(mood);
+            return;
         }
+        liftSquish();
+        updateFace(mood);
+        if (gridArr[y][x].isRevealed) tryChord(y, x);
+        else leftClick(y, x);
     }
 
     function visualSquish(y, x) {
         liftSquish();
-        if (gridArr[y][x].isRevealed) {
-            const neighbors = findNeighbors(y, x);
-            neighbors.forEach(n => {
-                const cell = gridArr[n.y][n.x];
-                if (!cell.isRevealed && !cell.isFlagged) {
-                    cell.el.className = 'cell num-0';
-                    squishedCells.push(cell);
+        const cell = gridArr[y][x];
+        if (cell.isRevealed) {
+            findNeighbors(y, x).forEach(n => {
+                const target = gridArr[n.y][n.x];
+                if (!target.isRevealed && !target.isFlagged) {
+                    target.el.className = 'cell num-0';
+                    squishedCells.push(target);
                 }
             });
-        } else if (!gridArr[y][x].isFlagged) {
-            gridArr[y][x].el.className = 'cell num-0';
-            squishedCells.push(gridArr[y][x]);
+        } else if (!cell.isFlagged) {
+            cell.el.className = 'cell num-0';
+            squishedCells.push(cell);
         }
     }
 
@@ -431,56 +463,46 @@
 
     function leftClick(y, x) {
         if (isGameOver || gridArr[y][x].isFlagged || gridArr[y][x].isRevealed) return;
-        if (freshGame) {
-            seedMines(y, x);
-            tick();
-            freshGame = false;
-        }
-        if (gridArr[y][x].isMine) {
-            boom(y, x);
-            return;
-        }
+        if (freshGame) { seedMines(y, x); tick(); freshGame = false; }
+        if (gridArr[y][x].isMine) { boom(y, x); return; }
         playSound('pop');
         floodFill(y, x);
         checkWin();
     }
 
+    function rightClick(y, x) {
+        if (isGameOver || gridArr[y][x].isRevealed) return;
+        const cell = gridArr[y][x];
+        cell.isFlagged = !cell.isFlagged;
+        cell.el.className = cell.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
+        if (cell.isFlagged) flaggedKeys.add(`${y},${x}`); else flaggedKeys.delete(`${y},${x}`);
+        const diff = document.getElementById('difficulty').value;
+        drawLCD('mine-count-display', levels[diff].m - flaggedKeys.size);
+    }
+
     function tryChord(y, x) {
         const cell = gridArr[y][x];
         const neighbors = findNeighbors(y, x);
-        const flagsAround = neighbors.filter(n => gridArr[n.y][n.x].isFlagged).length;
-        if (flagsAround === cell.count) {
-            neighbors.forEach(n => {
-                const target = gridArr[n.y][n.x];
-                if (!target.isRevealed && !target.isFlagged) {
-                    leftClick(n.y, n.x);
-                }
-            });
+        const flags = neighbors.filter(n => gridArr[n.y][n.x].isFlagged).length;
+        if (flags === cell.count) {
+            neighbors.forEach(n => leftClick(n.y, n.x));
         }
     }
 
     function seedMines(safeY, safeX) {
         const diff = document.getElementById('difficulty').value;
         const { m: total } = levels[diff];
-        const rows = gridArr.length;
-        const cols = gridArr[0].length;
-        
+        const rows = gridArr.length, cols = gridArr[0].length;
         let count = 0;
         while (count < total) {
-            let ry = Math.floor(Math.random() * rows);
-            let rx = Math.floor(Math.random() * cols);
-            let key = `${ry},${rx}`;
-            if (!mineKeys.has(key) && (Math.abs(ry - safeY) > 1 || Math.abs(rx - safeX) > 1)) {
-                mineKeys.add(key);
-                gridArr[ry][rx].isMine = true;
-                count++;
+            let ry = Math.floor(Math.random() * rows), rx = Math.floor(Math.random() * cols);
+            if (!gridArr[ry][rx].isMine && (Math.abs(ry - safeY) > 1 || Math.abs(rx - safeX) > 1)) {
+                gridArr[ry][rx].isMine = true; mineKeys.add(`${ry},${rx}`); count++;
             }
         }
         for (let y = 0; y < rows; y++) {
             for (let x = 0; x < cols; x++) {
-                if (!gridArr[y][x].isMine) {
-                    gridArr[y][x].count = findNeighbors(y, x).filter(n => gridArr[n.y][n.x].isMine).length;
-                }
+                if (!gridArr[y][x].isMine) gridArr[y][x].count = findNeighbors(y, x).filter(n => gridArr[n.y][n.x].isMine).length;
             }
         }
     }
@@ -501,76 +523,51 @@
     function floodFill(y, x) {
         const cell = gridArr[y][x];
         if (cell.isRevealed || cell.isFlagged) return;
-        cell.isRevealed = true;
-        squaresOpened++;
+        cell.isRevealed = true; squaresOpened++;
         cell.el.className = `cell num-${cell.count}`;
-        if (cell.count === 0) {
-            findNeighbors(y, x).forEach(n => floodFill(n.y, n.x));
-        }
-    }
-
-    function rightClick(y, x) {
-        if (isGameOver || gridArr[y][x].isRevealed) return;
-        const cell = gridArr[y][x];
-        cell.isFlagged = !cell.isFlagged;
-        cell.el.className = cell.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
-        if (cell.isFlagged) flaggedKeys.add(`${y},${x}`); else flaggedKeys.delete(`${y},${x}`);
-        
-        const diff = document.getElementById('difficulty').value;
-        drawLCD('mine-count-display', levels[diff].m - flaggedKeys.size);
-    }
-
-    function tick() {
-        if (clock) clearInterval(clock);
-        clock = setInterval(() => {
-            timeElapsed = Math.min(timeElapsed + 1, 999);
-            drawLCD('timer-display', timeElapsed);
-        }, 1000);
+        if (cell.count === 0) findNeighbors(y, x).forEach(n => floodFill(n.y, n.x));
     }
 
     function checkWin() {
-        const r = gridArr.length, c = gridArr[0].length;
+        const total = gridArr.length * gridArr[0].length;
         const diff = document.getElementById('difficulty').value;
-        const mines = levels[diff].m;
-        
-        if (squaresOpened === (r * c) - mines) {
-            isGameOver = true;
-            clearInterval(clock);
-            mood = 'win';
-            updateFace('win');
-            playSound('win');
+        if (squaresOpened === total - levels[diff].m) {
+            isGameOver = true; clearInterval(clock); mood = 'win'; updateFace('win'); playSound('win');
             drawLCD('mine-count-display', 0);
-            mineKeys.forEach(key => {
-                const [my, mx] = key.split(',').map(Number);
-                if (!gridArr[my][mx].isFlagged) {
-                    gridArr[my][mx].isFlagged = true;
-                    gridArr[my][mx].el.className = 'cell cell-flag';
-                }
-            });
         }
     }
 
     function boom(hitY, hitX) {
-        isGameOver = true;
-        clearInterval(clock);
-        mood = 'dead';
-        updateFace('dead');
-        playSound('bomb');
-        mineKeys.forEach(key => {
-            const [my, mx] = key.split(',').map(Number);
-            if (!gridArr[my][mx].isFlagged) {
-                gridArr[my][mx].el.className = (my === hitY && mx === hitX) ? 'cell cell-mine-hit' : 'cell cell-mine-revealed';
-            }
+        isGameOver = true; clearInterval(clock); mood = 'dead'; updateFace('dead'); playSound('bomb');
+        mineKeys.forEach(k => {
+            const [y, x] = k.split(',').map(Number);
+            if (!gridArr[y][x].isFlagged) gridArr[y][x].el.className = (y === hitY && x === hitX) ? 'cell cell-mine-hit' : 'cell cell-mine-revealed';
         });
-        flaggedKeys.forEach(key => {
-            const [fy, fx] = key.split(',').map(Number);
-            if (!gridArr[fy][fx].isMine) gridArr[fy][fx].el.className = 'cell cell-mine-wrong';
+        flaggedKeys.forEach(k => {
+            const [y, x] = k.split(',').map(Number);
+            if (!gridArr[y][x].isMine) gridArr[y][x].el.className = 'cell cell-mine-wrong';
         });
     }
 
-    window.addEventListener('resize', handleResize);
-    window.onload = setupBoard;
-</script>
+    function drawLCD(id, val) {
+        const digits = document.getElementById(id).querySelectorAll('.digit');
+        let s = Math.abs(val).toString().padStart(3, '0');
+        if (val < 0) s = '-' + Math.abs(val).toString().slice(-2).padStart(2, '0');
+        if (val > 999) s = '999';
+        s.split('').forEach((c, i) => {
+            if (digits[i]) digits[i].className = 'digit ' + (c === '-' ? 'digit-minus' : `digit-${c}`);
+        });
+    }
 
+    function updateFace(type) { document.getElementById('reset-btn').className = `smiley-btn face-${type}`; }
+    function tick() {
+        if (clock) clearInterval(clock);
+        clock = setInterval(() => { timeElapsed = Math.min(timeElapsed + 1, 999); drawLCD('timer-display', timeElapsed); }, 1000);
+    }
+
+    window.addEventListener('resize', resetView);
+    // Initial call: Reset the view on launch
+    window.onload = () => setupBoard(true);
+</script>
 </body>
 </html>
