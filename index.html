@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="https://nexucore.github.io/minesweeper/assets/minesweeperLogo.png">
+    <title>Minesweeper</title>
+    <style>
+        :root {
+            --xp-gray: #c0c0c0;
+            --xp-white: #ffffff;
+            --xp-shadow: #808080;
+            --sprite-url: url('https://minesweeperonline.com/sprite100.gif');
+        }
+
+        body {
+            background-color: #008080;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Tahoma', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            overflow: hidden;
+        }
+
+        #game-scaler {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.1s ease-out;
+            transform-origin: center center;
+        }
+
+        .game-window {
+            background-color: var(--xp-gray);
+            padding: 6px;
+            border: 3px solid;
+            border-color: var(--xp-white) var(--xp-shadow) var(--xp-shadow) var(--xp-white);
+            display: inline-flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        .controls {
+            margin-bottom: 10px;
+            font-size: 11px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .header-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 7px;
+            margin-bottom: 6px;
+            border: 3px solid;
+            border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
+            box-sizing: border-box;
+        }
+
+        .lcd-display {
+            background-color: black;
+            display: flex;
+            padding: 1px;
+            border: 1px solid var(--xp-shadow);
+        }
+
+        .digit {
+            width: 13px;
+            height: 23px;
+            background-image: var(--sprite-url);
+            background-repeat: no-repeat;
+        }
+
+        .digit-0 { background-position: 0px 0px; }
+        .digit-1 { background-position: -13px 0px; }
+        .digit-2 { background-position: -26px 0px; }
+        .digit-3 { background-position: -39px 0px; }
+        .digit-4 { background-position: -52px 0px; }
+        .digit-5 { background-position: -65px 0px; }
+        .digit-6 { background-position: -78px 0px; }
+        .digit-7 { background-position: -91px 0px; }
+        .digit-8 { background-position: -104px 0px; }
+        .digit-9 { background-position: -117px 0px; }
+        .digit-minus { background-position: -130px 0px; }
+
+        .smiley-btn {
+            width: 26px;
+            height: 26px;
+            background-image: var(--sprite-url);
+            background-repeat: no-repeat;
+            cursor: pointer;
+            border: none;
+            padding: 0;
+            outline: none;
+        }
+
+        .face-smile { background-position: 0px -55px; }
+        .face-pressed { background-position: -26px -55px; }
+        .face-ooh { background-position: -52px -55px; }
+        .face-dead { background-position: -78px -55px; }
+        .face-win { background-position: -104px -55px; }
+
+        #grid {
+            display: grid;
+            border: 3px solid;
+            border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
+            background-color: var(--xp-shadow);
+            margin: 0 auto;
+            box-sizing: content-box;
+        }
+
+        .cell {
+            width: 16px;
+            height: 16px;
+            background-image: var(--sprite-url);
+            background-repeat: no-repeat;
+            touch-action: none;
+        }
+
+        .cell-blank { background-position: 0px -39px; }
+        .cell-flag { background-position: -16px -39px; }
+        .cell-mine-hit { background-position: -32px -39px; }
+        .cell-mine-wrong { background-position: -48px -39px; }
+        .cell-mine-revealed { background-position: -64px -39px; }
+        .cell-question { background-position: -80px -39px; }
+
+        .num-0 { background-position: 0px -23px; }
+        .num-1 { background-position: -16px -23px; }
+        .num-2 { background-position: -32px -23px; }
+        .num-3 { background-position: -48px -23px; }
+        .num-4 { background-position: -64px -23px; }
+        .num-5 { background-position: -80px -23px; }
+        .num-6 { background-position: -96px -23px; }
+        .num-7 { background-position: -112px -23px; }
+        .num-8 { background-position: -128px -23px; }
+    </style>
+</head>
+<body>
+
+<div id="game-scaler">
+    <div class="game-window" id="main-window">
+        <div class="controls">
+            <div>
+                Difficulty: 
+                <select id="difficulty" onchange="setupBoard()">
+                    <option value="easy">Beginner</option>
+                    <option value="medium">Intermediate</option>
+                    <option value="hard">Expert</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="header-panel" id="header-panel">
+            <div class="lcd-display" id="mine-count-display">
+                <div class="digit"></div>
+                <div class="digit"></div>
+                <div class="digit"></div>
+            </div>
+            <button class="smiley-btn face-smile" id="reset-btn" onmousedown="showClickFace()" onmouseup="resetFace()" onmouseleave="resetFace()" onclick="setupBoard()"></button>
+            <div class="lcd-display" id="timer-display">
+                <div class="digit"></div>
+                <div class="digit"></div>
+                <div class="digit"></div>
+            </div>
+        </div>
+
+        <div id="grid"></div>
+    </div>
+</div>
+
+<script>
+    const levels = {
+        easy: { r: 9, c: 9, m: 10 },
+        medium: { r: 16, c: 16, m: 40 },
+        hard: { r: 16, c: 30, m: 99 }
+    };
+
+    const sfx = {
+        win: new Audio('https://nexucore.github.io/minesweeper/assets/win.mp3'),
+        bomb: new Audio('https://nexucore.github.io/minesweeper/assets/explode.mp3'),
+        pop: new Audio('https://nexucore.github.io/minesweeper/assets/pop.mp3')
+    };
+
+    let gridArr = [];
+    let mineKeys = new Set();
+    let squaresOpened = 0;
+    let flaggedKeys = new Set();
+    let isGameOver = false;
+    let clock = null;
+    let timeElapsed = 0;
+    let freshGame = true;
+    let pressingDown = false;
+    let mood = 'smile';
+    let squishedCells = [];
+    let holdTimer = null;
+    let wasLongTap = false;
+    let lastExpertOrientation = null; // 'portrait' or 'landscape'
+
+    function isMobilePhone() {
+        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+        const isMobile = /android|iphone|ipod|windows phone/i.test(userAgent.toLowerCase());
+        const isTablet = /ipad|tablet|(android(?!.*mobile))/i.test(userAgent.toLowerCase());
+        return isMobile && !isTablet;
+    }
+
+    function getScreenOrientation() {
+        return window.innerHeight > window.innerWidth ? 'portrait' : 'landscape';
+    }
+
+    function playSound(name) {
+        const sound = sfx[name];
+        if (sound) {
+            sound.currentTime = 0;
+            sound.play().catch(() => {});
+        }
+    }
+
+    function handleResize() {
+        const scaler = document.getElementById('game-scaler');
+        const win = document.getElementById('main-window');
+        const diff = document.getElementById('difficulty').value;
+        const padding = 20; 
+        
+        // Auto-rebuild board if orientation changes during an Expert game
+        if (diff === 'hard' && isMobilePhone()) {
+            const currentOrientation = getScreenOrientation();
+            if (currentOrientation !== lastExpertOrientation) {
+                setupBoard();
+                return; // setupBoard calls handleResize at the end
+            }
+        }
+
+        scaler.style.transform = 'scale(1)';
+        
+        const availableWidth = window.innerWidth - padding;
+        const availableHeight = window.innerHeight - padding;
+        const currentWidth = win.offsetWidth;
+        const currentHeight = win.offsetHeight;
+
+        let scale = 1;
+        if (currentWidth > availableWidth || currentHeight > availableHeight) {
+            scale = Math.min(availableWidth / currentWidth, availableHeight / currentHeight);
+        }
+        
+        scaler.style.transform = `scale(${scale})`;
+    }
+
+    function showClickFace() { updateFace('pressed'); }
+    function resetFace() { updateFace(mood); }
+
+    function drawLCD(id, val) {
+        const box = document.getElementById(id);
+        const digits = box.querySelectorAll('.digit');
+        let abs = Math.abs(val);
+        let s = abs.toString().padStart(3, '0');
+        if (val < 0) s = '-' + abs.toString().slice(-2).padStart(2, '0');
+        if (val > 999) s = '999';
+
+        s.split('').forEach((char, i) => {
+            if (!digits[i]) return;
+            digits[i].className = 'digit';
+            digits[i].classList.add(char === '-' ? 'digit-minus' : `digit-${char}`);
+        });
+    }
+
+    function updateFace(type) {
+        document.getElementById('reset-btn').className = `smiley-btn face-${type}`;
+    }
+
+    function setupBoard() {
+        const diff = document.getElementById('difficulty').value;
+        let { r: rows, c: cols, m: mines } = levels[diff];
+        
+        if (diff === 'hard') {
+            const orientation = getScreenOrientation();
+            lastExpertOrientation = orientation;
+            if (isMobilePhone() && orientation === 'portrait') {
+                rows = 30;
+                cols = 16;
+            } else {
+                rows = 16;
+                cols = 30;
+            }
+        }
+        
+        const gridUI = document.getElementById('grid');
+        const header = document.getElementById('header-panel');
+        
+        isGameOver = false;
+        freshGame = true;
+        squaresOpened = 0;
+        mineKeys.clear();
+        flaggedKeys.clear();
+        
+        if (clock) clearInterval(clock);
+        timeElapsed = 0;
+        mood = 'smile';
+        squishedCells = [];
+        
+        updateFace('smile');
+        drawLCD('timer-display', 0);
+        drawLCD('mine-count-display', mines);
+
+        gridUI.style.gridTemplateColumns = `repeat(${cols}, 16px)`;
+        gridUI.style.width = `${cols * 16}px`;
+        header.style.width = `${cols * 16 + 6}px`; 
+        
+        gridUI.innerHTML = '';
+        gridArr = [];
+
+        const frag = document.createDocumentFragment();
+        for (let y = 0; y < rows; y++) {
+            gridArr[y] = [];
+            for (let x = 0; x < cols; x++) {
+                const el = document.createElement('div');
+                el.className = 'cell cell-blank';
+                
+                el.addEventListener('mousedown', (e) => onDown(e, y, x));
+                el.addEventListener('mouseup', (e) => onUp(e, y, x));
+                el.addEventListener('mouseenter', (e) => onEnter(e, y, x));
+                el.addEventListener('mouseleave', (e) => onLeave(e, y, x));
+                
+                el.addEventListener('touchstart', (e) => {
+                    if (isGameOver) return;
+                    wasLongTap = false;
+                    holdTimer = setTimeout(() => {
+                        wasLongTap = true;
+                        rightClick(y, x);
+                        liftSquish();
+                        updateFace(mood);
+                    }, 500);
+                    onDown({ button: 0 }, y, x);
+                }, { passive: true });
+
+                el.addEventListener('touchend', (e) => {
+                    clearTimeout(holdTimer);
+                    if (wasLongTap) {
+                        pressingDown = false;
+                        if (e.cancelable) e.preventDefault();
+                    } else {
+                        onUp({ button: 0 }, y, x);
+                    }
+                });
+
+                el.addEventListener('contextmenu', e => e.preventDefault());
+
+                frag.appendChild(el);
+                gridArr[y][x] = {
+                    el: el,
+                    isMine: false,
+                    isRevealed: false,
+                    isFlagged: false,
+                    count: 0,
+                    y, x
+                };
+            }
+        }
+        gridUI.appendChild(frag);
+        
+        setTimeout(handleResize, 0);
+    }
+
+    function onDown(e, y, x) {
+        if (isGameOver) return;
+        if (e.button === 0) {
+            pressingDown = true;
+            updateFace('ooh');
+            visualSquish(y, x);
+        }
+    }
+
+    function onEnter(e, y, x) {
+        if (!pressingDown || isGameOver) return;
+        visualSquish(y, x);
+    }
+
+    function onLeave(e, y, x) {
+        if (!pressingDown || isGameOver) return;
+        liftSquish();
+    }
+
+    function onUp(e, y, x) {
+        if (isGameOver) return;
+        if (e.button === 0) {
+            pressingDown = false;
+            updateFace(mood);
+            liftSquish();
+            if (gridArr[y][x].isRevealed) {
+                tryChord(y, x);
+            } else {
+                leftClick(y, x);
+            }
+        } else if (e.button === 2) {
+            rightClick(y, x);
+        }
+    }
+
+    function visualSquish(y, x) {
+        liftSquish();
+        if (gridArr[y][x].isRevealed) {
+            const neighbors = findNeighbors(y, x);
+            neighbors.forEach(n => {
+                const cell = gridArr[n.y][n.x];
+                if (!cell.isRevealed && !cell.isFlagged) {
+                    cell.el.className = 'cell num-0';
+                    squishedCells.push(cell);
+                }
+            });
+        } else if (!gridArr[y][x].isFlagged) {
+            gridArr[y][x].el.className = 'cell num-0';
+            squishedCells.push(gridArr[y][x]);
+        }
+    }
+
+    function liftSquish() {
+        while (squishedCells.length > 0) {
+            const cell = squishedCells.pop();
+            if (!cell.isRevealed) {
+                cell.el.className = cell.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
+            }
+        }
+    }
+
+    function leftClick(y, x) {
+        if (isGameOver || gridArr[y][x].isFlagged || gridArr[y][x].isRevealed) return;
+        if (freshGame) {
+            seedMines(y, x);
+            tick();
+            freshGame = false;
+        }
+        if (gridArr[y][x].isMine) {
+            boom(y, x);
+            return;
+        }
+        playSound('pop');
+        floodFill(y, x);
+        checkWin();
+    }
+
+    function tryChord(y, x) {
+        const cell = gridArr[y][x];
+        const neighbors = findNeighbors(y, x);
+        const flagsAround = neighbors.filter(n => gridArr[n.y][n.x].isFlagged).length;
+        if (flagsAround === cell.count) {
+            neighbors.forEach(n => {
+                const target = gridArr[n.y][n.x];
+                if (!target.isRevealed && !target.isFlagged) {
+                    leftClick(n.y, n.x);
+                }
+            });
+        }
+    }
+
+    function seedMines(safeY, safeX) {
+        const diff = document.getElementById('difficulty').value;
+        const { m: total } = levels[diff];
+        const rows = gridArr.length;
+        const cols = gridArr[0].length;
+        
+        let count = 0;
+        while (count < total) {
+            let ry = Math.floor(Math.random() * rows);
+            let rx = Math.floor(Math.random() * cols);
+            let key = `${ry},${rx}`;
+            if (!mineKeys.has(key) && (Math.abs(ry - safeY) > 1 || Math.abs(rx - safeX) > 1)) {
+                mineKeys.add(key);
+                gridArr[ry][rx].isMine = true;
+                count++;
+            }
+        }
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                if (!gridArr[y][x].isMine) {
+                    gridArr[y][x].count = findNeighbors(y, x).filter(n => gridArr[n.y][n.x].isMine).length;
+                }
+            }
+        }
+    }
+
+    function findNeighbors(y, x) {
+        const rows = gridArr.length, cols = gridArr[0].length;
+        const list = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dy === 0 && dx === 0) continue;
+                let ny = y + dy, nx = x + dx;
+                if (ny >= 0 && ny < rows && nx >= 0 && nx < cols) list.push({ y: ny, x: nx });
+            }
+        }
+        return list;
+    }
+
+    function floodFill(y, x) {
+        const cell = gridArr[y][x];
+        if (cell.isRevealed || cell.isFlagged) return;
+        cell.isRevealed = true;
+        squaresOpened++;
+        cell.el.className = `cell num-${cell.count}`;
+        if (cell.count === 0) {
+            findNeighbors(y, x).forEach(n => floodFill(n.y, n.x));
+        }
+    }
+
+    function rightClick(y, x) {
+        if (isGameOver || gridArr[y][x].isRevealed) return;
+        const cell = gridArr[y][x];
+        cell.isFlagged = !cell.isFlagged;
+        cell.el.className = cell.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
+        if (cell.isFlagged) flaggedKeys.add(`${y},${x}`); else flaggedKeys.delete(`${y},${x}`);
+        
+        const diff = document.getElementById('difficulty').value;
+        drawLCD('mine-count-display', levels[diff].m - flaggedKeys.size);
+    }
+
+    function tick() {
+        if (clock) clearInterval(clock);
+        clock = setInterval(() => {
+            timeElapsed = Math.min(timeElapsed + 1, 999);
+            drawLCD('timer-display', timeElapsed);
+        }, 1000);
+    }
+
+    function checkWin() {
+        const r = gridArr.length, c = gridArr[0].length;
+        const diff = document.getElementById('difficulty').value;
+        const mines = levels[diff].m;
+        
+        if (squaresOpened === (r * c) - mines) {
+            isGameOver = true;
+            clearInterval(clock);
+            mood = 'win';
+            updateFace('win');
+            playSound('win');
+            drawLCD('mine-count-display', 0);
+            mineKeys.forEach(key => {
+                const [my, mx] = key.split(',').map(Number);
+                if (!gridArr[my][mx].isFlagged) {
+                    gridArr[my][mx].isFlagged = true;
+                    gridArr[my][mx].el.className = 'cell cell-flag';
+                }
+            });
+        }
+    }
+
+    function boom(hitY, hitX) {
+        isGameOver = true;
+        clearInterval(clock);
+        mood = 'dead';
+        updateFace('dead');
+        playSound('bomb');
+        mineKeys.forEach(key => {
+            const [my, mx] = key.split(',').map(Number);
+            if (!gridArr[my][mx].isFlagged) {
+                gridArr[my][mx].el.className = (my === hitY && mx === hitX) ? 'cell cell-mine-hit' : 'cell cell-mine-revealed';
+            }
+        });
+        flaggedKeys.forEach(key => {
+            const [fy, fx] = key.split(',').map(Number);
+            if (!gridArr[fy][fx].isMine) gridArr[fy][fx].el.className = 'cell cell-mine-wrong';
+        });
+    }
+
+    window.addEventListener('resize', handleResize);
+    window.onload = setupBoard;
+</script>
+
+</body>
+</html>
