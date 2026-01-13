@@ -332,7 +332,17 @@
         }
     }, { passive: true });
 
-    viewport.addEventListener('touchend', () => isDragging = false);
+    viewport.addEventListener('touchend', () => {
+        isDragging = false;
+        // Reset flags so the next interaction is clean
+        setTimeout(() => {
+        hasMovedSignificantly = false;
+    }, 10);
+    
+    // Ensure the visual state returns to normal after moving the camera
+    liftSquish();
+    updateFace(mood);
+});
 
     // --- GAME LOGIC ---
 
