@@ -540,12 +540,13 @@
     }
 
     function releaseSquares() {
-        while (pressedSquares.length > 0) {
-            const tile = pressedSquares.pop();
-            if (!tile.isRevealed) tile.el.className = tile.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
+    while (pressedSquares.length > 0) {
+        const tile = pressedSquares.pop();
+        if (gameEnded) continue;
+        if (!tile.isRevealed)
+            tile.el.className = tile.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
         }
     }
-
     function openSquare(y, x) {
         if (gameEnded || boardData[y][x].isFlagged || boardData[y][x].isRevealed) return;
         if (waitingForFirstMove) { plantMines(y, x); startTimer(); waitingForFirstMove = false; }
