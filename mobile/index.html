@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="https://nexucore.github.io/minesweeper/assets/minesweeperLogo.png">
+    <title>Minesweeper</title>
+    <style>
+        :root {
+            --xp-gray: #c0c0c0;
+            --xp-white: #ffffff;
+            --xp-shadow: #808080;
+            --sprite-url: url('https://minesweeperonline.com/sprite100.gif');
+        }
+
+        body {
+            background-color: #008080;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Tahoma', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            overflow: hidden;
+        }
+
+        #viewport {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #header-container {
+            display: none;
+        }
+
+        @media (pointer: coarse) {
+            #header-container {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                z-index: 100;
+                background-color: var(--xp-gray);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                border-bottom: 3px solid var(--xp-shadow);
+                box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+                padding-bottom: 12px;
+            }
+            
+            .game-window > .header-panel, 
+            .game-window > .controls {
+                display: none !important;
+            }
+
+            .mobile-difficulty-wrapper {
+                padding: 10px;
+                font-size: 14px;
+                font-weight: bold;
+                width: 100%;
+                text-align: center;
+                background: #b0b0b0;
+                margin-bottom: 18px;
+                border-bottom: 1px solid var(--xp-shadow);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 15px;
+            }
+
+            #header-panel-mobile {
+                transform: scale(1.6);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 20px;
+                border: none;
+                background: transparent;
+            }
+        }
+
+        #game-scaler {
+            position: absolute;
+            cursor: grab;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        .game-window {
+            background-color: var(--xp-gray);
+            padding: 6px;
+            border: 3px solid;
+            border-color: var(--xp-white) var(--xp-shadow) var(--xp-shadow) var(--xp-white);
+            display: inline-flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        .controls {
+            margin-bottom: 10px;
+            font-size: 11px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .header-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 7px;
+            margin-bottom: 6px;
+            border: 3px solid;
+            border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
+            box-sizing: border-box;
+        }
+
+        .lcd-display {
+            background-color: black;
+            display: flex;
+            padding: 1px;
+            border: 1px solid var(--xp-shadow);
+        }
+
+        .digit {
+            width: 13px;
+            height: 23px;
+            background-image: var(--sprite-url);
+            background-repeat: no-repeat;
+        }
+
+        .digit-0 { background-position: 0px 0px; }
+        .digit-1 { background-position: -13px 0px; }
+        .digit-2 { background-position: -26px 0px; }
+        .digit-3 { background-position: -39px 0px; }
+        .digit-4 { background-position: -52px 0px; }
+        .digit-5 { background-position: -65px 0px; }
+        .digit-6 { background-position: -78px 0px; }
+        .digit-7 { background-position: -91px 0px; }
+        .digit-8 { background-position: -104px 0px; }
+        .digit-9 { background-position: -117px 0px; }
+        .digit-minus { background-position: -130px 0px; }
+
+        .smiley-btn {
+            width: 26px;
+            height: 26px;
+            background-image: var(--sprite-url);
+            background-repeat: no-repeat;
+            cursor: pointer;
+            border: none;
+            padding: 0;
+            outline: none;
+        }
+
+        .face-smile { background-position: 0px -55px; }
+        .face-pressed { background-position: -26px -55px; }
+        .face-ooh { background-position: -52px -55px; }
+        .face-dead { background-position: -78px -55px; }
+        .face-win { background-position: -104px -55px; }
+        
+        .smiley-btn:active {
+            background-position: -26px -55px;
+        }
+
+        .flag-toggle-btn {
+            width: 32px;
+            height: 32px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            cursor: pointer;
+            border: none;
+            background-color: transparent;
+            flex-shrink: 0;
+        }
+        .flag-off { background-image: url('https://nexucore.github.io/minesweeper/assets/flagmodeoff.png'); }
+        .flag-on { background-image: url('https://nexucore.github.io/minesweeper/assets/flagmodeon.png'); }
+
+        #grid {
+            display: grid;
+            border: 3px solid;
+            border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
+            background-color: var(--xp-shadow);
+            margin: 0 auto;
+            box-sizing: content-box;
+        }
+
+        .cell {
+            width: 16px;
+            height: 16px;
+            background-image: var(--sprite-url);
+            background-repeat: no-repeat;
+        }
+
+        .cell-blank { background-position: 0px -39px; }
+        .cell-flag { background-position: -16px -39px; }
+        .cell-mine-hit { background-position: -32px -39px; }
+        .cell-mine-wrong { background-position: -48px -39px; }
+        .cell-mine-revealed { background-position: -64px -39px; }
+        .cell-question { background-position: -80px -39px; }
+
+        .num-0 { background-position: 0px -23px; }
+        .num-1 { background-position: -16px -23px; }
+        .num-2 { background-position: -32px -23px; }
+        .num-3 { background-position: -48px -23px; }
+        .num-4 { background-position: -64px -23px; }
+        .num-5 { background-position: -80px -23px; }
+        .num-6 { background-position: -96px -23px; }
+        .num-7 { background-position: -112px -23px; }
+        .num-8 { background-position: -128px -23px; }
+    </style>
+</head>
+<body>
+
+<div id="viewport">
+    <div id="header-container">
+        <div class="mobile-difficulty-wrapper">
+            <button class="flag-toggle-btn flag-off" onclick="switchFlaggingMode()"></button>
+            <select class="difficulty-select" onchange="changeDifficulty(this.value)">
+                <option value="easy">Beginner</option>
+                <option value="medium">Intermediate</option>
+                <option value="hard">Expert</option>
+            </select>
+        </div>
+        <div class="header-panel" id="header-panel-mobile">
+            <div class="lcd-display mine-count-display">
+                <div class="digit"></div><div class="digit"></div><div class="digit"></div>
+            </div>
+            <button class="smiley-btn face-smile reset-btn" onclick="buildNewGame(false)"></button>
+            <div class="lcd-display timer-display">
+                <div class="digit"></div><div class="digit"></div><div class="digit"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-scaler">
+        <div class="game-window" id="main-window">
+            <div class="controls">
+                <button class="flag-toggle-btn flag-off" onclick="switchFlaggingMode()"></button>
+                <div>
+                    Difficulty: 
+                    <select class="difficulty-select" onchange="changeDifficulty(this.value)">
+                        <option value="easy">Beginner</option>
+                        <option value="medium">Intermediate</option>
+                        <option value="hard">Expert</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="header-panel" id="header-panel-desktop">
+                <div class="lcd-display mine-count-display">
+                    <div class="digit"></div><div class="digit"></div><div class="digit"></div>
+                </div>
+                <button class="smiley-btn face-smile reset-btn" onclick="buildNewGame(false)"></button>
+                <div class="lcd-display timer-display">
+                    <div class="digit"></div><div class="digit"></div><div class="digit"></div>
+                </div>
+            </div>
+
+            <div id="grid"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const gameSettings = {
+        easy: { r: 9, c: 9, m: 10 },
+        medium: { r: 16, c: 16, m: 40 },
+        hard: { r: 16, c: 30, m: 99 }
+    };
+
+    const audioFiles = {
+        win: new Audio('https://nexucore.github.io/minesweeper/assets/win.mp3'),
+        bomb: new Audio('https://nexucore.github.io/minesweeper/assets/explode.mp3'),
+        pop: new Audio('https://nexucore.github.io/minesweeper/assets/pop.mp3')
+    };
+
+    let boardData = [];
+    let bombLocations = new Set();
+    let revealedCount = 0;
+    let flaggedLocations = new Set();
+    let gameEnded = false;
+    let gameClock = null;
+    let secondsSpent = 0;
+    let waitingForFirstMove = true;
+    let currentMood = 'smile';
+    let pressedSquares = [];
+    let flaggingEnabled = false;
+    let lastFlagAction = 0; 
+    
+    let viewZoom = 1;
+    let viewLeft = 0;
+    let viewTop = 0;
+    let pinchDistance = 0;
+    let zoomOnStart = 1;
+    let mousePointerX = 0;
+    let mousePointerY = 0;
+    let draggingCanvas = false;
+    let userHasPanned = false;
+
+    let longPressTrigger = null;
+    let triggerFlagInsteadOfReveal = false;
+    let initialTouchPoint = { x: 0, y: 0 };
+
+    const canvasContainer = document.getElementById('game-scaler');
+    const touchArea = document.getElementById('viewport');
+    const mainBox = document.getElementById('main-window');
+    const topBar = document.getElementById('header-container');
+
+    function triggerSound(effect) {
+        const track = audioFiles[effect];
+        if (track) { track.currentTime = 0; track.play().catch(() => {}); }
+    }
+
+    function switchFlaggingMode() {
+        flaggingEnabled = !flaggingEnabled;
+        document.querySelectorAll('.flag-toggle-btn').forEach(button => {
+            button.className = 'flag-toggle-btn ' + (flaggingEnabled ? 'flag-on' : 'flag-off');
+        });
+    }
+
+    function changeDifficulty(newLevel) {
+        document.querySelectorAll('.difficulty-select').forEach(dropdown => dropdown.value = newLevel);
+        buildNewGame(true); 
+    }
+
+    function applyScreenChanges() {
+        canvasContainer.style.transform = `translate(${viewLeft}px, ${viewTop}px) scale(${viewZoom})`;
+    }
+
+    function centerGameInViewport() {
+        const game = mainBox;
+        const screenW = touchArea.clientWidth;
+        const screenH = touchArea.clientHeight;
+        const gameW = game.offsetWidth;
+        const gameH = game.offsetHeight;
+
+        const isPhone = window.matchMedia("(pointer: coarse)").matches;
+        const barHeight = isPhone ? topBar.offsetHeight : 0;
+        const playAreaHeight = screenH - barHeight;
+
+        const spacing = 20;
+        viewZoom = Math.min((screenW - spacing * 2) / gameW, (playAreaHeight - spacing * 2) / gameH);
+        
+        if (viewZoom > 2.5) viewZoom = 2.5;
+        if (viewZoom < 0.2) viewZoom = 0.2;
+
+        viewLeft = (screenW - gameW * viewZoom) / 2;
+        viewTop = barHeight + (playAreaHeight - gameH * viewZoom) / 2;
+        
+        applyScreenChanges();
+    }
+
+    touchArea.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+        const worldX = (event.clientX - viewLeft) / viewZoom;
+        const worldY = (event.clientY - viewTop) / viewZoom;
+        viewZoom = Math.max(0.1, Math.min(viewZoom * factor, 10));
+        viewLeft = event.clientX - worldX * viewZoom;
+        viewTop = event.clientY - worldY * viewZoom;
+        applyScreenChanges();
+    }, { passive: false });
+
+    touchArea.addEventListener('mousedown', (event) => {
+        if (event.button === 1 || (event.button === 0 && event.target === touchArea)) {
+            draggingCanvas = true;
+            mousePointerX = event.clientX; mousePointerY = event.clientY;
+        }
+    });
+
+    window.addEventListener('mousemove', (event) => {
+        if (draggingCanvas) {
+            viewLeft += event.clientX - mousePointerX;
+            viewTop += event.clientY - mousePointerY;
+            mousePointerX = event.clientX; mousePointerY = event.clientY;
+            applyScreenChanges();
+        }
+    });
+
+    window.addEventListener('mouseup', () => draggingCanvas = false);
+
+    touchArea.addEventListener('touchstart', (event) => {
+        if (event.touches.length === 2) {
+            pinchDistance = Math.hypot(event.touches[0].pageX - event.touches[1].pageX, event.touches[0].pageY - event.touches[1].pageY);
+            zoomOnStart = viewZoom;
+        } else if (event.touches.length === 1) {
+            draggingCanvas = true;
+            mousePointerX = event.touches[0].pageX; mousePointerY = event.touches[0].pageY;
+            initialTouchPoint = { x: mousePointerX, y: mousePointerY };
+            userHasPanned = false;
+        }
+    }, { passive: true });
+
+    touchArea.addEventListener('touchmove', (event) => {
+        if (event.touches.length === 2) {
+            const currentDist = Math.hypot(event.touches[0].pageX - event.touches[1].pageX, event.touches[0].pageY - event.touches[1].pageY);
+            const ratio = currentDist / pinchDistance;
+            const midX = (event.touches[0].pageX + event.touches[1].pageX) / 2;
+            const midY = (event.touches[0].pageY + event.touches[1].pageY) / 2;
+            const worldX = (midX - viewLeft) / viewZoom;
+            const worldY = (midY - viewTop) / viewZoom;
+            viewZoom = Math.max(0.1, Math.min(zoomOnStart * ratio, 10));
+            viewLeft = midX - worldX * viewZoom;
+            viewTop = midY - worldY * viewZoom;
+            applyScreenChanges();
+            userHasPanned = true;
+        } else if (event.touches.length === 1 && draggingCanvas) {
+            const shiftX = event.touches[0].pageX - mousePointerX;
+            const shiftY = event.touches[0].pageY - mousePointerY;
+            if (Math.hypot(event.touches[0].pageX - initialTouchPoint.x, event.touches[0].pageY - initialTouchPoint.y) > 5) {
+                userHasPanned = true;
+            }
+            viewLeft += shiftX; viewTop += shiftY;
+            mousePointerX = event.touches[0].pageX; mousePointerY = event.touches[0].pageY;
+            applyScreenChanges();
+        }
+    }, { passive: true });
+
+    touchArea.addEventListener('touchend', () => {
+        draggingCanvas = false;
+        setTimeout(() => { userHasPanned = false; }, 50);
+        releaseSquares();
+        setFaceGraphic(currentMood);
+    });
+
+    function buildNewGame(shouldRecenter = false) {
+        const choice = document.querySelector('.difficulty-select').value;
+        let { r: rows, c: cols, m: mineCount } = gameSettings[choice];
+        
+        if (window.innerHeight > window.innerWidth && choice === 'hard') {
+            rows = 30; cols = 16;
+        }
+
+        const boardEl = document.getElementById('grid');
+        const desktopDisplay = document.getElementById('header-panel-desktop');
+        
+        gameEnded = false; waitingForFirstMove = true; revealedCount = 0;
+        bombLocations.clear(); flaggedLocations.clear();
+        if (gameClock) clearInterval(gameClock);
+        secondsSpent = 0; currentMood = 'smile'; pressedSquares = [];
+        
+        setFaceGraphic('smile');
+        refreshDigitDisplay('timer-display', 0);
+        refreshDigitDisplay('mine-count-display', mineCount);
+
+        boardEl.style.gridTemplateColumns = `repeat(${cols}, 16px)`;
+        boardEl.style.width = `${cols * 16}px`;
+        if (desktopDisplay) desktopDisplay.style.width = `${cols * 16 + 6}px`; 
+        
+        boardEl.innerHTML = '';
+        boardData = [];
+
+        for (let y = 0; y < rows; y++) {
+            boardData[y] = [];
+            for (let x = 0; x < cols; x++) {
+                const square = document.createElement('div');
+                square.className = 'cell cell-blank';
+                square.addEventListener('mousedown', (e) => {
+                    if (e.button === 0) startPressing(y, x);
+                    if (e.button === 2) handleFlagging(y, x);
+                });
+                square.addEventListener('mouseup', (e) => { if (e.button === 0) finishPressing(y, x); });
+                square.addEventListener('touchstart', (e) => {
+                    if (e.touches.length > 1) { clearTimeout(longPressTrigger); releaseSquares(); return; }
+                    userHasPanned = false;
+                    longPressTrigger = setTimeout(() => {
+                        if (!userHasPanned && !gameEnded) {
+                            triggerFlagInsteadOfReveal = true; 
+                            if (flaggingEnabled) openSquare(y, x); else handleFlagging(y, x); 
+                            releaseSquares();
+                        }
+                    }, 400);
+                    startPressing(y, x);
+                }, { passive: true });
+                square.addEventListener('touchend', (e) => {
+                    clearTimeout(longPressTrigger);
+                    if (!triggerFlagInsteadOfReveal && !userHasPanned) finishPressing(y, x);
+                    triggerFlagInsteadOfReveal = false;
+                });
+                square.addEventListener('contextmenu', e => e.preventDefault());
+                boardEl.appendChild(square);
+                boardData[y][x] = { el: square, isBomb: false, isRevealed: false, isFlagged: false, neighbors: 0, y, x };
+            }
+        }
+        
+        if (shouldRecenter) {
+            requestAnimationFrame(() => {
+                setTimeout(centerGameInViewport, 50);
+            });
+        }
+    }
+
+    function startPressing(y, x) {
+        if (gameEnded) return;
+        setFaceGraphic('ooh');
+        previewSquarePress(y, x);
+    }
+
+    function finishPressing(y, x) {
+        if (gameEnded || userHasPanned) { releaseSquares(); setFaceGraphic(currentMood); return; }
+        releaseSquares();
+        setFaceGraphic(currentMood);
+        const tile = boardData[y][x];
+        if (tile.isRevealed) attemptQuickClear(y, x);
+        else if (flaggingEnabled) {
+            const timeNow = Date.now();
+            if (timeNow - lastFlagAction > 100) {
+                handleFlagging(y, x);
+                lastFlagAction = timeNow;
+            }
+        }
+        else openSquare(y, x);
+    }
+
+    function previewSquarePress(y, x) {
+        releaseSquares();
+        const tile = boardData[y][x];
+        if (tile.isRevealed) {
+            getAdjacents(y, x).forEach(adj => {
+                const target = boardData[adj.y][adj.x];
+                if (!target.isRevealed && !target.isFlagged) {
+                    target.el.className = 'cell num-0';
+                    pressedSquares.push(target);
+                }
+            });
+        } else if (!tile.isFlagged) {
+            tile.el.className = 'cell num-0';
+            pressedSquares.push(tile);
+        }
+    }
+
+    function releaseSquares() {
+        while (pressedSquares.length > 0) {
+            const tile = pressedSquares.pop();
+            if (!tile.isRevealed) tile.el.className = tile.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
+        }
+    }
+
+    function openSquare(y, x) {
+        if (gameEnded || boardData[y][x].isFlagged || boardData[y][x].isRevealed) return;
+        if (waitingForFirstMove) { plantMines(y, x); startTimer(); waitingForFirstMove = false; }
+        if (boardData[y][x].isBomb) { endGameWithExplosion(y, x); return; }
+        triggerSound('pop');
+        expandRevealedArea(y, x);
+        verifyWinCondition();
+    }
+
+    function handleFlagging(y, x) {
+        if (gameEnded || boardData[y][x].isRevealed) return;
+        const tile = boardData[y][x];
+        tile.isFlagged = !tile.isFlagged;
+        tile.el.className = tile.isFlagged ? 'cell cell-flag' : 'cell cell-blank';
+        if (tile.isFlagged) flaggedLocations.add(`${y},${x}`); else flaggedLocations.delete(`${y},${x}`);
+        const currentLevel = document.querySelector('.difficulty-select').value;
+        refreshDigitDisplay('mine-count-display', gameSettings[currentLevel].m - flaggedLocations.size);
+    }
+
+    function attemptQuickClear(y, x) {
+        const tile = boardData[y][x];
+        const adjacentCells = getAdjacents(y, x);
+        const flagCount = adjacentCells.filter(adj => boardData[adj.y][adj.x].isFlagged).length;
+        if (flagCount === tile.neighbors) adjacentCells.forEach(adj => openSquare(adj.y, adj.x));
+    }
+
+    function plantMines(safeY, safeX) {
+        const currentLevel = document.querySelector('.difficulty-select').value;
+        const totalMines = gameSettings[currentLevel].m;
+        const rows = boardData.length, cols = boardData[0].length;
+        let planted = 0;
+        while (planted < totalMines) {
+            let ry = Math.floor(Math.random() * rows), rx = Math.floor(Math.random() * cols);
+            if (!boardData[ry][rx].isBomb && (Math.abs(ry - safeY) > 1 || Math.abs(rx - safeX) > 1)) {
+                boardData[ry][rx].isBomb = true; bombLocations.add(`${ry},${rx}`); planted++;
+            }
+        }
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                if (!boardData[y][x].isBomb) boardData[y][x].neighbors = getAdjacents(y, x).filter(adj => boardData[adj.y][adj.x].isBomb).length;
+            }
+        }
+    }
+
+    function getAdjacents(y, x) {
+        const rows = boardData.length, cols = boardData[0].length;
+        const neighbors = [];
+        for (let offY = -1; offY <= 1; offY++) {
+            for (let offX = -1; offX <= 1; offX++) {
+                if (offY === 0 && offX === 0) continue;
+                let ny = y + offY, nx = x + offX;
+                if (ny >= 0 && ny < rows && nx >= 0 && nx < cols) neighbors.push({ y: ny, x: nx });
+            }
+        }
+        return neighbors;
+    }
+
+    function expandRevealedArea(y, x) {
+        const tile = boardData[y][x];
+        if (tile.isRevealed || tile.isFlagged) return;
+        tile.isRevealed = true; revealedCount++;
+        tile.el.className = `cell num-${tile.neighbors}`;
+        if (tile.neighbors === 0) getAdjacents(y, x).forEach(adj => expandRevealedArea(adj.y, adj.x));
+    }
+
+    function verifyWinCondition() {
+        const totalTiles = boardData.length * boardData[0].length;
+        const level = document.querySelector('.difficulty-select').value;
+        if (revealedCount === totalTiles - gameSettings[level].m) {
+            gameEnded = true; clearInterval(gameClock); currentMood = 'win'; setFaceGraphic('win'); triggerSound('win');
+            refreshDigitDisplay('mine-count-display', 0);
+        }
+    }
+
+    function endGameWithExplosion(failY, failX) {
+        gameEnded = true; clearInterval(gameClock); currentMood = 'dead'; setFaceGraphic('dead'); triggerSound('bomb');
+        bombLocations.forEach(coord => {
+            const [y, x] = coord.split(',').map(Number);
+            if (!boardData[y][x].isFlagged) boardData[y][x].el.className = (y === failY && x === failX) ? 'cell cell-mine-hit' : 'cell cell-mine-revealed';
+        });
+        flaggedLocations.forEach(coord => {
+            const [y, x] = coord.split(',').map(Number);
+            if (!boardData[y][x].isBomb) boardData[y][x].el.className = 'cell cell-mine-wrong';
+        });
+    }
+
+    function refreshDigitDisplay(targetClass, num) {
+        const panels = document.querySelectorAll('.' + targetClass);
+        let digits = Math.abs(num).toString().padStart(3, '0');
+        if (num < 0) digits = '-' + Math.abs(num).toString().slice(-2).padStart(2, '0');
+        if (num > 999) digits = '999';
+        panels.forEach(panel => {
+            const spans = panel.querySelectorAll('.digit');
+            digits.split('').forEach((char, idx) => { if (spans[idx]) spans[idx].className = 'digit ' + (char === '-' ? 'digit-minus' : `digit-${char}`); });
+        });
+    }
+
+    function setFaceGraphic(moodName) { 
+        document.querySelectorAll('.reset-btn').forEach(button => {
+            button.className = `smiley-btn reset-btn face-${moodName}`;
+        });
+    }
+
+    function startTimer() {
+        if (gameClock) clearInterval(gameClock);
+        gameClock = setInterval(() => { secondsSpent = Math.min(secondsSpent + 1, 999); refreshDigitDisplay('timer-display', secondsSpent); }, 1000);
+    }
+
+    window.addEventListener('resize', () => centerGameInViewport());
+    window.onload = () => buildNewGame(true);
+</script>
+</body>
+</html>
