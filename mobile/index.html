@@ -228,7 +228,8 @@
             <select class="difficulty-select" onchange="changeDifficulty(this.value)">
                 <option value="easy">Beginner</option>
                 <option value="medium">Intermediate</option>
-                <option value="hard">Expert</option>
+                <option value="hard">Hard</option>
+                <option value="expert">Expert</option>
             </select>
         </div>
         <div class="header-panel" id="header-panel-mobile">
@@ -251,7 +252,8 @@
                     <select class="difficulty-select" onchange="changeDifficulty(this.value)">
                         <option value="easy">Beginner</option>
                         <option value="medium">Intermediate</option>
-                        <option value="hard">Expert</option>
+                        <option value="hard">Hard</option>
+                        <option value="expert">Expert</option>
                     </select>
                 </div>
             </div>
@@ -275,7 +277,8 @@
     const gameSettings = {
         easy: { r: 9, c: 9, m: 10 },
         medium: { r: 16, c: 16, m: 40 },
-        hard: { r: 16, c: 30, m: 99 }
+        hard: { r: 16, c: 30, m: 72 },
+        expert: { r: 16, c: 30, m: 99 }
     };
 
     const audioFiles = {
@@ -437,7 +440,7 @@
         const choice = document.querySelector('.difficulty-select').value;
         let { r: rows, c: cols, m: mineCount } = gameSettings[choice];
         
-        if (window.innerHeight > window.innerWidth && choice === 'hard') {
+        if (window.innerHeight > window.innerWidth && (choice === 'hard' || choice === 'expert')) {
             rows = 30; cols = 16;
         }
 
