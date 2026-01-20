@@ -24,16 +24,27 @@
             font-family: 'Tahoma', sans-serif;
             user-select: none;
             -webkit-user-select: none;
-            touch-action: manipulation;
             overflow: hidden;
+            cursor: default;
+        }
+
+        /* Container for panning */
+        #viewport {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: default; 
         }
 
         #game-scaler {
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: transform 0.1s ease-out;
+            transition: transform 0.05s linear;
             transform-origin: center center;
+            pointer-events: auto;
         }
 
         .game-window {
@@ -130,7 +141,6 @@
         .cell-mine-hit { background-position: -32px -39px; }
         .cell-mine-wrong { background-position: -48px -39px; }
         .cell-mine-revealed { background-position: -64px -39px; }
-        .cell-question { background-position: -80px -39px; }
 
         .num-0 { background-position: 0px -23px; }
         .num-1 { background-position: -16px -23px; }
@@ -141,46 +151,93 @@
         .num-6 { background-position: -96px -23px; }
         .num-7 { background-position: -112px -23px; }
         .num-8 { background-position: -128px -23px; }
+
+        #zoom-ui {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 1000;
+        }
+
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            background: var(--xp-gray);
+            border: 2px solid;
+            border-color: var(--xp-white) var(--xp-shadow) var(--xp-shadow) var(--xp-white);
+            font-weight: bold;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .zoom-btn:active {
+            border-color: var(--xp-shadow) var(--xp-white) var(--xp-white) var(--xp-shadow);
+            padding: 2px 0 0 2px;
+        }
     </style>
 </head>
 <body>
 
-<div id="game-scaler">
-    <div class="game-window" id="main-window">
-        <div class="controls">
-            <div>
-                Difficulty: 
-                <select id="difficulty" onchange="setupBoard()">
-                    <option value="easy">Beginner</option>
-                    <option value="medium">Intermediate</option>
-                    <option value="hard">Expert</option>
-                </select>
+<div id="viewport">
+    <div id="game-scaler">
+        <div class="game-window" id="main-window">
+            <div class="controls">
+                <div>
+                    Difficulty: 
+                    <select id="difficulty" onchange="setupBoard(true)">
+                        <option value="easy">Beginner</option>
+                        <option value="medium">Intermediate</option>
+                        <option value="hard">Hard</option>
+                        <option value="expert">Expert</option>
+                    </select>
+                </div>
             </div>
-        </div>
 
-        <div class="header-panel" id="header-panel">
-            <div class="lcd-display" id="mine-count-display">
-                <div class="digit"></div>
-                <div class="digit"></div>
-                <div class="digit"></div>
+            <div class="header-panel" id="header-panel">
+                <div class="lcd-display" id="mine-count-display">
+                    <div class="digit"></div>
+                    <div class="digit"></div>
+                    <div class="digit"></div>
+                </div>
+                <button class="smiley-btn face-smile" id="reset-btn" 
+                        onmousedown="event.stopPropagation(); showClickFace()" 
+                        onmouseup="resetFace()" 
+                        onmouseleave="resetFace()" 
+                        onclick="setupBoard(false)"></button>
+                <div class="lcd-display" id="timer-display">
+                    <div class="digit"></div>
+                    <div class="digit"></div>
+                    <div class="digit"></div>
+                </div>
             </div>
-            <button class="smiley-btn face-smile" id="reset-btn" onmousedown="showClickFace()" onmouseup="resetFace()" onmouseleave="resetFace()" onclick="setupBoard()"></button>
-            <div class="lcd-display" id="timer-display">
-                <div class="digit"></div>
-                <div class="digit"></div>
-                <div class="digit"></div>
-            </div>
-        </div>
 
-        <div id="grid"></div>
+            <div id="grid"></div>
+        </div>
     </div>
 </div>
 
+<div id="zoom-ui">
+    <button class="zoom-btn" onclick="adjustZoom(0.2)">+</button>
+    <button class="zoom-btn" onclick="adjustZoom(-0.2)">-</button>
+    <button class="zoom-btn" onclick="resetZoom()">⟲</button>
+</div>
+
 <script>
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        window.location.href = "https://nexucore.github.io/minesweeper/mobile";
+    }
+
     const levels = {
         easy: { r: 9, c: 9, m: 10 },
         medium: { r: 16, c: 16, m: 40 },
-        hard: { r: 16, c: 30, m: 99 }
+        hard: { r: 16, c: 30, m: 72 }, // 16x30 with 72 mines
+        expert: { r: 16, c: 30, m: 99 } // 16x30 with 99 mines
     };
 
     const sfx = {
@@ -200,20 +257,21 @@
     let pressingDown = false;
     let mood = 'smile';
     let squishedCells = [];
-    let holdTimer = null;
-    let wasLongTap = false;
-    let lastExpertOrientation = null; // 'portrait' or 'landscape'
+    
+    // Zoom and Pan State
+    let zoomLevel = 1;
+    let panX = 0;
+    let panY = 0;
+    let isPanning = false;
+    let startMouseX = 0;
+    let startMouseY = 0;
+    let initialPanX = 0;
+    let initialPanY = 0;
+    let hasMoved = false;
+    const MOVE_THRESHOLD = 5; 
 
-    function isMobilePhone() {
-        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-        const isMobile = /android|iphone|ipod|windows phone/i.test(userAgent.toLowerCase());
-        const isTablet = /ipad|tablet|(android(?!.*mobile))/i.test(userAgent.toLowerCase());
-        return isMobile && !isTablet;
-    }
-
-    function getScreenOrientation() {
-        return window.innerHeight > window.innerWidth ? 'portrait' : 'landscape';
-    }
+    const viewport = document.getElementById('viewport');
+    const scaler = document.getElementById('game-scaler');
 
     function playSound(name) {
         const sound = sfx[name];
@@ -223,34 +281,52 @@
         }
     }
 
-    function handleResize() {
-        const scaler = document.getElementById('game-scaler');
-        const win = document.getElementById('main-window');
-        const diff = document.getElementById('difficulty').value;
-        const padding = 20; 
+    viewport.addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') return;
+
+        isPanning = true;
+        hasMoved = false;
+        startMouseX = e.clientX;
+        startMouseY = e.clientY;
+        initialPanX = panX;
+        initialPanY = panY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
         
-        // Auto-rebuild board if orientation changes during an Expert game
-        if (diff === 'hard' && isMobilePhone()) {
-            const currentOrientation = getScreenOrientation();
-            if (currentOrientation !== lastExpertOrientation) {
-                setupBoard();
-                return; // setupBoard calls handleResize at the end
-            }
+        const dx = e.clientX - startMouseX;
+        const dy = e.clientY - startMouseY;
+        
+        if (!hasMoved && (Math.abs(dx) > MOVE_THRESHOLD || Math.abs(dy) > MOVE_THRESHOLD)) {
+            hasMoved = true;
         }
 
-        scaler.style.transform = 'scale(1)';
-        
-        const availableWidth = window.innerWidth - padding;
-        const availableHeight = window.innerHeight - padding;
-        const currentWidth = win.offsetWidth;
-        const currentHeight = win.offsetHeight;
-
-        let scale = 1;
-        if (currentWidth > availableWidth || currentHeight > availableHeight) {
-            scale = Math.min(availableWidth / currentWidth, availableHeight / currentHeight);
+        if (hasMoved) {
+            panX = initialPanX + dx;
+            panY = initialPanY + dy;
+            updateTransform();
         }
-        
-        scaler.style.transform = `scale(${scale})`;
+    });
+
+    window.addEventListener('mouseup', () => {
+        isPanning = false;
+    });
+
+    function adjustZoom(delta) {
+        zoomLevel = Math.max(0.5, Math.min(6, zoomLevel + delta));
+        updateTransform();
+    }
+
+    function resetZoom() {
+        zoomLevel = 1;
+        panX = 0;
+        panY = 0;
+        updateTransform();
+    }
+
+    function updateTransform() {
+        scaler.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
     }
 
     function showClickFace() { updateFace('pressed'); }
@@ -275,21 +351,9 @@
         document.getElementById('reset-btn').className = `smiley-btn face-${type}`;
     }
 
-    function setupBoard() {
+    function setupBoard(resetCamera = false) {
         const diff = document.getElementById('difficulty').value;
         let { r: rows, c: cols, m: mines } = levels[diff];
-        
-        if (diff === 'hard') {
-            const orientation = getScreenOrientation();
-            lastExpertOrientation = orientation;
-            if (isMobilePhone() && orientation === 'portrait') {
-                rows = 30;
-                cols = 16;
-            } else {
-                rows = 16;
-                cols = 30;
-            }
-        }
         
         const gridUI = document.getElementById('grid');
         const header = document.getElementById('header-panel');
@@ -323,33 +387,23 @@
                 const el = document.createElement('div');
                 el.className = 'cell cell-blank';
                 
-                el.addEventListener('mousedown', (e) => onDown(e, y, x));
-                el.addEventListener('mouseup', (e) => onUp(e, y, x));
-                el.addEventListener('mouseenter', (e) => onEnter(e, y, x));
-                el.addEventListener('mouseleave', (e) => onLeave(e, y, x));
-                
-                el.addEventListener('touchstart', (e) => {
+                el.addEventListener('mousedown', (e) => {
                     if (isGameOver) return;
-                    wasLongTap = false;
-                    holdTimer = setTimeout(() => {
-                        wasLongTap = true;
-                        rightClick(y, x);
-                        liftSquish();
-                        updateFace(mood);
-                    }, 500);
-                    onDown({ button: 0 }, y, x);
-                }, { passive: true });
-
-                el.addEventListener('touchend', (e) => {
-                    clearTimeout(holdTimer);
-                    if (wasLongTap) {
-                        pressingDown = false;
-                        if (e.cancelable) e.preventDefault();
-                    } else {
-                        onUp({ button: 0 }, y, x);
-                    }
+                    onDown(e, y, x);
                 });
 
+                el.addEventListener('mouseup', (e) => {
+                    if (isGameOver) return;
+                    if (hasMoved) {
+                        liftSquish();
+                        updateFace(mood);
+                        return;
+                    }
+                    onUp(e, y, x);
+                });
+
+                el.addEventListener('mouseenter', (e) => onEnter(e, y, x));
+                el.addEventListener('mouseleave', (e) => onLeave(e, y, x));
                 el.addEventListener('contextmenu', e => e.preventDefault());
 
                 frag.appendChild(el);
@@ -364,12 +418,15 @@
             }
         }
         gridUI.appendChild(frag);
-        
-        setTimeout(handleResize, 0);
+
+        if (resetCamera) {
+            resetZoom();
+        } else {
+            updateTransform();
+        }
     }
 
     function onDown(e, y, x) {
-        if (isGameOver) return;
         if (e.button === 0) {
             pressingDown = true;
             updateFace('ooh');
@@ -388,7 +445,6 @@
     }
 
     function onUp(e, y, x) {
-        if (isGameOver) return;
         if (e.button === 0) {
             pressingDown = false;
             updateFace(mood);
@@ -568,8 +624,8 @@
         });
     }
 
-    window.addEventListener('resize', handleResize);
-    window.onload = setupBoard;
+    window.addEventListener('resize', () => updateTransform());
+    window.onload = () => setupBoard(true); 
 </script>
 
 </body>
