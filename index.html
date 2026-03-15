@@ -229,9 +229,9 @@
 </div>
 
 <script>
-    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-        window.location.href = "https://nexucore.github.io/minesweeper/mobile";
-    }
+if ('ontouchstart' in window) {
+    window.location.href = "https://nexucore.github.io/minesweeper/mobile";
+}
 
     const levels = {
         easy: { r: 9, c: 9, m: 10 },
